@@ -37,8 +37,8 @@ const darkMedia = block(':root:not([data-theme="light"])');
 const darkAttr = block(':root[data-theme="dark"]');
 
 describe("design tokens (design.md §2.1–2.4)", () => {
-  it("reads all 32 token rows from design.md", () => {
-    expect(tokens).toHaveLength(32);
+  it("reads all 40 token rows from design.md", () => {
+    expect(tokens).toHaveLength(40);
   });
 
   it("dark media block sits inside prefers-color-scheme: dark", () => {
@@ -135,15 +135,49 @@ describe("theme script (M0.2 note 5)", () => {
   });
 });
 
+// CSS named colors (CSS Color 4, 148). transparent and currentColor are allowed, so they are not listed.
+const NAMED_COLORS =
+  "aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood " +
+  "cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray " +
+  "darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen " +
+  "darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue " +
+  "firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew " +
+  "hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan " +
+  "lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray " +
+  "lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue " +
+  "mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred " +
+  "midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid " +
+  "palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple " +
+  "rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue " +
+  "slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white " +
+  "whitesmoke yellow yellowgreen";
+// The lookarounds keep token names such as var(--blue) from matching.
+const colorLiteral = new RegExp(
+  String.raw`#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color|color-mix)\(|(?<![\w-])(?:${NAMED_COLORS.replace(/ /g, "|")})(?![\w-])`,
+  "i",
+);
+
 describe("components reference tokens only (design.md §2)", () => {
   const modules = srcFiles.filter((f) => f.endsWith(".module.css"));
+  const components = srcFiles.filter((f) => f.endsWith(".tsx"));
 
-  it("finds the CSS modules", () => {
+  it("finds the CSS modules and components", () => {
     expect(modules.length).toBeGreaterThan(0);
+    expect(components.length).toBeGreaterThan(0);
   });
 
   it.each(modules)("src/%s has no color literal", (file) => {
     const source = read(join("src", file)).replace(/\/\*[\s\S]*?\*\//g, "");
-    expect(source).not.toMatch(/#[0-9a-f]{3,8}\b|\b(?:rgba?|hsla?|oklch|lab|lch)\(/i);
+    // Declaration values only, so a selector such as .white is not a hit.
+    const values = [...source.matchAll(/:\s*([^;{}]+)(?=[;}])/g)].map((m) => m[1]);
+    expect(values.filter((v) => colorLiteral.test(v))).toEqual([]);
+  });
+
+  // SVG paint attributes and color properties of style objects.
+  it.each(components)("src/%s has no color literal in paint attributes or styles", (file) => {
+    const paint =
+      /\b(?:fill|stroke|stopColor|floodColor|lightingColor|color|background(?:Color)?|border\w*Color|outlineColor|caretColor|accentColor|textDecorationColor|boxShadow|textShadow)\s*[=:]\s*\{?\s*(["'`])(.*?)\1/g;
+    const values = [...read(join("src", file)).matchAll(paint)].map((m) => m[2]);
+    expect(values.filter((v) => colorLiteral.test(v))).toEqual([]);
   });
 });

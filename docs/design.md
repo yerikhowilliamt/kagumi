@@ -30,6 +30,12 @@ All colors are CSS custom properties defined once on `:root` in the global style
 | `--amber` | `#e8a33a` | `#e8a33a` | Data accent: marquee separator, funnel "add to cart", previous-period chart line, PO activity rail |
 | `--coral` | `#e57a6c` | `#e57a6c` | Marquee separator only |
 | `--on-accent` | `#0e1a33` | `#0e1a33` | Text on any pastel/butter fill. Never changes with the theme |
+| `--on-blue` | `#ffffff` | `#ffffff` | Text and icons on `--blue` fills: primary button, CTA band, cart badge, cart bar. Never changes with the theme |
+| `--on-blue-muted` | `rgb(255 255 255 / .85)` | `rgb(255 255 255 / .85)` | Secondary text on `--blue` fills: notice bar. Never changes with the theme |
+| `--blue-chip` | `rgb(255 255 255 / .18)` | `rgb(255 255 255 / .18)` | Chip fill on `--blue`: cart bar subtotal. Never changes with the theme |
+| `--whatsapp` | `#25d366` | `#25d366` | WhatsApp button fill only. Never changes with the theme |
+| `--whatsapp-hover` | `#1fbd5a` | `#1fbd5a` | Hover of the WhatsApp button. Never changes with the theme |
+| `--on-whatsapp` | `#0b2e1a` | `#0b2e1a` | Text on `--whatsapp` and `--whatsapp-hover`. Never changes with the theme |
 
 Pastels are **fills only**. Text on them is always `--on-accent`. Product placeholder fills rotate butter → pink → sky → mint.
 
@@ -49,6 +55,8 @@ Pastels are **fills only**. Text on them is always `--on-accent`. Product placeh
 | `--on-strong` | `#ffffff` | `#0b1220` | Text on `--strong` |
 | `--nav-bg` | `rgb(250 248 243 / .86)` | `rgb(11 18 32 / .82)` | Sticky nav / topbar (with blur) |
 | `--hl-bg` | `#ffe7a3` | `rgb(31 91 204 / .6)` | Highlighter bar under the hero keyword (butter is muddy on navy, so dark uses blue) |
+| `--backdrop` | `rgb(11 18 32 / .5)` | `rgb(11 18 32 / .5)` | Dialog / sheet backdrop, with `blur(4px)`. Never changes with the theme |
+| `--knob` | `#ffffff` | `#ffffff` | Switch knob. Never changes with the theme |
 
 ### 2.3 Tags
 
@@ -78,14 +86,16 @@ Pastels are **fills only**. Text on them is always `--on-accent`. Product placeh
 | `--muted` | `--bg` | 5.1:1 | 7.87:1 |
 | `--muted` | `--surface` | 5.41:1 | 7.22:1 |
 | `--link` | `--bg` | 7.31:1 | 9.04:1 |
-| `#fff` | `--blue` | 7.76:1 | 6.13:1 |
+| `--on-blue` | `--blue` | 7.76:1 | 6.13:1 |
+| `--on-blue-muted` | `--blue` | 6.07:1 | 4.90:1 |
 | `--on-accent` | `--butter` | 14.17:1 | 12.78:1 |
 | `--on-accent` | `--pink` | 12.44:1 | 10.71:1 |
 | `--on-accent` | `--sky` | 13.51:1 | 11.81:1 |
 | `--on-accent` | `--mint` | 13.88:1 | 12.44:1 |
-| `#0b2e1a` | WhatsApp `#25d366` | 7.46:1 | 7.46:1 |
+| `--on-whatsapp` | `--whatsapp` | 7.46:1 | 7.46:1 |
+| `--on-whatsapp` | `--whatsapp-hover` | 5.98:1 | 5.98:1 |
 
-Text on `--blue` may use `rgb(255 255 255 / .75–.85)` for secondary copy. Don't go below .75.
+Secondary copy on `--blue` uses `--on-blue-muted`. It is fixed at .85 because white at .75 drops to 4.18:1 on the dark `--blue`.
 
 ### 2.6 Theming (light / dark)
 
@@ -99,7 +109,6 @@ Text on `--blue` may use `rgb(255 255 255 / .75–.85)` for secondary copy. Don'
 
 | Value | Use |
 |---|---|
-| `#25d366` bg / `#0b2e1a` text | WhatsApp buttons only |
 | `#dcf8c6` bg / `#111b21` text | WhatsApp message preview bubble on the order-confirmation screen |
 | `#0e1a33` bg / `#ffe7a3` text | "Utama" badge on admin media thumbnails (sits on photos) |
 | `rgb(14 26 51 / .7)` / white | Video duration chip and play button on media (sits on photos) |
@@ -193,7 +202,7 @@ Flat by default. Depth comes from color blocks and hairlines.
 | float | `0 20px 40px -20px rgb(14 26 51 / .35)` | Floating promo card |
 | toast | `0 16px 32px -12px rgb(0 0 0 / .35)` | Toast |
 | cta-glow | `0 16px 32px -12px rgb(11 78 173 / .6)` | Mobile cart bar, admin mobile "Tambah produk" FAB |
-| backdrop | `rgb(11 18 32 / .5)` + `blur(4px)` | Dialog / sheet backdrop |
+| backdrop | `--backdrop` + `blur(4px)` | Dialog / sheet backdrop |
 
 ### Breakpoints
 
@@ -243,10 +252,10 @@ Dialogs open and close with CSS transitions (`@starting-style` + `allow-discrete
 
 | Variant | Default | Hover | Use |
 |---|---|---|---|
-| Primary | `--blue` bg, `#fff` | `--blue-ink`. Storefront lifts −2px (hover-capable pointers only) | Main action |
+| Primary | `--blue` bg, `--on-blue` | `--blue-ink`. Storefront lifts −2px (hover-capable pointers only) | Main action |
 | Line | `--surface` bg, 1px `--line`, `--ink` | border `--ink` | Secondary action, nav WhatsApp |
 | Butter | `--butter` bg, `--on-accent` | lift | Action on `--blue` (CTA band) |
-| WhatsApp | `#25d366` bg, `#0b2e1a` | `#1fbd5a` | Anything that opens WhatsApp: checkout submit, "Buka chat WhatsApp" |
+| WhatsApp | `--whatsapp` bg, `--on-whatsapp` | `--whatsapp-hover` | Anything that opens WhatsApp: checkout submit, "Buka chat WhatsApp" |
 | Danger | `--surface` bg, `--error` text, border `--error` at 35% | `--error-bg` | "Hapus produk" |
 | Text link | 1px bottom border in currentColor | arrow nudge | Inline secondary action |
 | Icon (round / square) | 36–42px, `--surface`, 1px `--line`, `--ink` or `--muted` icon | border `--ink` | Theme toggle, cart, close (✕), edit |
@@ -282,7 +291,7 @@ Track `--bg`/`--surface-2` with 1px `--line`, 4px padding. Options are equal-wid
 
 ### Switch
 
-40×24 track (`--seg-off` off, `--success` on), 18px white knob, `role="switch"` with `aria-checked`. Label beside or via `aria-label`.
+40×24 track (`--seg-off` off, `--success` on), 18px `--knob` knob, `role="switch"` with `aria-checked`. Label beside or via `aria-label`.
 
 ### Quantity stepper
 
@@ -303,11 +312,11 @@ Pill with 1px `--line`, − / count / + buttons. 34px high (cart line) or 46px (
 
 ### Navigation
 
-Sticky 72px, `--nav-bg` + `backdrop-filter: saturate(1.4) blur(14px)`, bottom hairline. Left: 38px round logo + wordmark. Right: text links (`--muted`, hover `--ink`), theme toggle, Line "Pesan via WhatsApp" button, then the **cart button** (round icon, bag glyph) with a count badge (20px `--blue` pill, white 11px/600, hidden at 0).
+Sticky 72px, `--nav-bg` + `backdrop-filter: saturate(1.4) blur(14px)`, bottom hairline. Left: 38px round logo + wordmark. Right: text links (`--muted`, hover `--ink`), theme toggle, Line "Pesan via WhatsApp" button, then the **cart button** (round icon, bag glyph) with a count badge (20px `--blue` pill, `--on-blue` 11px/600, hidden at 0).
 
 ### Notice bar
 
-Full width, `--blue` bg, 13px `rgb(255 255 255 / .85)`, key phrase bold in `--butter`. Content: an "Open pre-order" phrase (the bold part), shown only while at least one pre-order is open, followed by the delivery-area text. With no open pre-order, the delivery-area text stands alone.
+Full width, `--blue` bg, 13px `--on-blue-muted`, key phrase bold in `--butter`. Content: an "Open pre-order" phrase (the bold part), shown only while at least one pre-order is open, followed by the delivery-area text. With no open pre-order, the delivery-area text stands alone.
 
 ### Hero
 
@@ -358,7 +367,7 @@ Bottom-center pill, `--strong` / `--on-strong`, message + butter "Lihat keranjan
 
 ### Mobile cart bar (≤ 640px)
 
-Fixed 12px from the bottom and sides, 56px, `--blue`, cta-glow shadow: "Lihat keranjang · n item" + subtotal chip (white at 18%). Only visible when the cart has items. Opens the cart sheet.
+Fixed 12px from the bottom and sides, 56px, `--blue`, `--on-blue` text, cta-glow shadow: "Lihat keranjang · n item" + subtotal chip (`--blue-chip`). Only visible when the cart has items. Opens the cart sheet.
 
 ### Steps
 
@@ -366,7 +375,7 @@ Fixed 12px from the bottom and sides, 56px, `--blue`, cta-glow shadow: "Lihat ke
 
 ### CTA band
 
-`--blue`, `#fff`, `r-xl`, rotating butter corner burst, label marker in butter, Butter button.
+`--blue`, `--on-blue`, `r-xl`, rotating butter corner burst, label marker in butter, Butter button.
 
 ### Footer
 

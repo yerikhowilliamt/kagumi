@@ -132,6 +132,20 @@ test("toggle from OS dark with nothing stored switches to light", async ({ page 
   await expectIcon(page, "light");
 });
 
+test("toggle hit area extends past its 42px box to 44px (design.md §5)", async ({ page }) => {
+  await page.goto("/");
+  const hit = await toggle(page).evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const y = r.top + r.height / 2;
+    return {
+      width: r.width,
+      left: document.elementFromPoint(r.left - 0.5, y) === el,
+      right: document.elementFromPoint(r.right + 0.5, y) === el,
+    };
+  });
+  expect(hit).toEqual({ width: 42, left: true, right: true });
+});
+
 test("reduced motion: the toggle has no transition", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");

@@ -14,11 +14,11 @@
   transition: border-color 0.2s ease, scale 0.1s ease-out;
 }
 
-/* Extend the hit area to 44px */
+/* Extend the hit area to 44px. inset is measured inside the 1px border, so -2px adds 1px beyond the 42px box. */
 .toggle::before {
   content: "";
   position: absolute;
-  inset: -1px;
+  inset: -2px;
   border-radius: inherit;
 }
 
