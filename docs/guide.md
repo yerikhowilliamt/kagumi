@@ -111,7 +111,7 @@ Other commands run during M0:
 | Command | Purpose |
 | --- | --- |
 | `npx vitest run tests/db` | Only the database tests |
-| `PLAYWRIGHT_BASE_URL=https://kagumi-dough.vercel.app npx playwright test e2e/theme.spec.ts` | The theme tests against production, with no local server. Read-only |
+| `PLAYWRIGHT_BASE_URL=https://kagumi-dough.vercel.app npx playwright test e2e/theme.spec.ts` | The theme tests against production, with no local server. Writes nothing while the storefront has no `/api/t` beacons. Once beacons exist, each run records `page_view` events in production |
 
 ## 4. Database
 
