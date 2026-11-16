@@ -1,0 +1,9 @@
+docs/plannings/
+docs/previews/
+docs/reviews/
+docs/logs/
+
+.env*
+!.env.example
+
+CLAUDE.md
