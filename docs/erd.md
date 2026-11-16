@@ -295,7 +295,7 @@ The partial unique index is written in raw SQL in the migration, because Prisma 
 - `products.price IS NULL OR products.price > 0`
 - `order_items.unit_price IS NULL OR order_items.unit_price > 0`
 - `order_items.quantity BETWEEN 1 AND 50`
-- `orders.fulfillment <> 'DELIVERY' OR length(trim(orders.address)) > 0`
+- `orders.fulfillment <> 'DELIVERY' OR (orders.address IS NOT NULL AND length(trim(orders.address)) > 0)`. The `IS NOT NULL` is required: without it a NULL address makes the expression NULL, and Postgres accepts a CHECK that evaluates to NULL
 - `product_media.bytes > 0`
 
 **Foreign-key behavior**

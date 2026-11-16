@@ -115,14 +115,14 @@ const COLUMNS: Record<string, Record<string, string>> = {
 describe("schema matches the ERD", { timeout: 60_000 }, () => {
   it("has exactly the 10 ERD tables", async () => {
     const rows = await db.$queryRaw<{ name: string }[]>`
-      SELECT tablename AS name FROM pg_tables
+      SELECT tablename::text AS name FROM pg_tables
       WHERE schemaname = 'public' AND tablename <> '_prisma_migrations' ORDER BY 1`;
     expect(rows.map((r) => r.name)).toEqual(Object.keys(COLUMNS).sort());
   });
 
   it("has the 5 enums with their exact values", async () => {
     const rows = await db.$queryRaw<{ name: string; vals: string[] }[]>`
-      SELECT t.typname AS name, array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] AS vals
+      SELECT t.typname::text AS name, array_agg(e.enumlabel ORDER BY e.enumsortorder)::text[] AS vals
       FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
       JOIN pg_namespace n ON n.oid = t.typnamespace AND n.nspname = 'public'
       GROUP BY t.typname`;
@@ -137,7 +137,7 @@ describe("schema matches the ERD", { timeout: 60_000 }, () => {
 
   it("has every column with the ERD type, length, nullability and default", async () => {
     const rows = await db.$queryRaw<{ tbl: string; col: string; def: string }[]>`
-      SELECT c.relname AS tbl, a.attname AS col,
+      SELECT c.relname::text AS tbl, a.attname::text AS col,
         format_type(a.atttypid, a.atttypmod)
           || CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE ' NULL' END
           || COALESCE(' DEFAULT ' || pg_get_expr(d.adbin, d.adrelid), '') AS def
@@ -153,7 +153,7 @@ describe("schema matches the ERD", { timeout: 60_000 }, () => {
 
   it("has the 5 CHECK constraints of ERD §5", async () => {
     const rows = await db.$queryRaw<{ name: string; def: string }[]>`
-      SELECT con.conname AS name, pg_get_constraintdef(con.oid) AS def
+      SELECT con.conname::text AS name, pg_get_constraintdef(con.oid) AS def
       FROM pg_constraint con JOIN pg_namespace n ON n.oid = con.connamespace AND n.nspname = 'public'
       WHERE con.contype = 'c'`;
     expect(Object.fromEntries(rows.map((r) => [r.name, r.def]))).toEqual({
