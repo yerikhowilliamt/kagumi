@@ -1,13 +1,6 @@
 // Development seed (P15). Run only with `npx prisma db seed` against the development branch.
 // Inserts the menu only when `products` is empty, so running it again changes nothing.
-try {
-  process.loadEnvFile();
-} catch {}
-
-// Dynamic import: db.ts reads DATABASE_URL on load, so .env must be loaded first.
-const { db } = await import("../src/lib/db.ts");
-
-export {};
+import type { Prisma } from "../src/generated/prisma/client.ts";
 
 const products = [
   { name: "Bolu Gulung", category: "Kue", type: "PRE_ORDER", description: "Lembut dengan filling nanas, strawberry, atau blueberry." },
@@ -26,16 +19,25 @@ const products = [
   },
 ] as const;
 
-try {
-  const existing = await db.product.count();
-  if (existing > 0) {
-    console.log(`products already has ${existing} rows; nothing inserted`);
-  } else {
-    const { count } = await db.product.createMany({
-      data: products.map((p, i) => ({ ...p, sortOrder: i + 1 })),
-    });
-    console.log(`inserted ${count} products`);
+/** Inserts the P15 menu when `products` is empty; returns the number of rows inserted. */
+export async function seedProducts(client: Prisma.TransactionClient) {
+  if ((await client.product.count()) > 0) return 0;
+  const { count } = await client.product.createMany({
+    data: products.map((p, i) => ({ ...p, sortOrder: i + 1 })),
+  });
+  return count;
+}
+
+if (import.meta.main) {
+  try {
+    process.loadEnvFile();
+  } catch {}
+  // Dynamic import: db.ts reads DATABASE_URL on load, so .env must be loaded first.
+  const { db } = await import("../src/lib/db.ts");
+  try {
+    const inserted = await seedProducts(db);
+    console.log(inserted ? `inserted ${inserted} products` : `products already has ${await db.product.count()} rows; nothing inserted`);
+  } finally {
+    await db.$disconnect();
   }
-} finally {
-  await db.$disconnect();
 }

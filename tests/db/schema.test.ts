@@ -1,7 +1,9 @@
 // Proves the applied schema matches docs/erd.md (§2 fields, §5 indexes, CHECKs, FKs) on the
 // development branch. Expected values are written from the ERD, not copied from schema.prisma.
-// Writes happen only inside transactions that are always rolled back.
-import { afterAll, describe, expect, it } from "vitest";
+// Writes happen only inside transactions that are always rolled back. Orders get explicit ids,
+// because ROLLBACK does not undo nextval(); the last test checks orders_id_seq did not move.
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { seedProducts } from "../../prisma/seed.ts";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set: tests/db needs the development branch in .env");
@@ -261,13 +263,23 @@ async function insertProduct(tx: Tx, price: number | null = null) {
   return p.id;
 }
 
+let nextOrderId = -1; // negative ids never collide with real orders and skip the sequence
+
 async function insertOrder(tx: Tx, fulfillment: string, address: string | null) {
   const [o] = await tx.$queryRaw<{ id: number }[]>`
-    INSERT INTO orders (customer_name, customer_phone, fulfillment, address, requested_date, updated_at)
-    VALUES ('schema-test', '6281200000000', ${fulfillment}::"Fulfillment", ${address}, current_date, now())
+    INSERT INTO orders (id, customer_name, customer_phone, fulfillment, address, requested_date, updated_at)
+    VALUES (${nextOrderId--}, 'schema-test', '6281200000000', ${fulfillment}::"Fulfillment", ${address}, current_date, now())
     RETURNING id`;
   return o.id;
 }
+
+const ordersSeq = async () =>
+  (await db.$queryRaw<{ v: string | null }[]>`
+    SELECT last_value::text AS v FROM pg_sequences WHERE schemaname = 'public' AND sequencename = 'orders_id_seq'`)[0].v;
+let seqBefore: string | null;
+beforeAll(async () => {
+  seqBefore = await ordersSeq();
+});
 
 async function insertMedia(tx: Tx, productId: string, bytes: number, isMain: boolean) {
   await tx.$executeRaw`
@@ -324,4 +336,72 @@ describe("constraints reject invalid rows", { timeout: 60_000 }, () => {
       await insertMedia(tx, productId, 1, true);
     });
   });
+});
+
+// ERD §1 ids are uuid v7 and ERD §2 updatedAt is @updatedAt: both are set by the client, not the database.
+describe("client-side defaults", { timeout: 60_000 }, () => {
+  it("sets uuid v7 ids on every uuid model and maintains updatedAt", async () => {
+    const V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+    await inRolledBackTx(async (tx) => {
+      const admin = await tx.adminUser.create({ data: { email: "schema-test@example.test", passwordHash: "x" } });
+      const session = await tx.session.create({
+        data: { adminId: admin.id, tokenHash: "0".repeat(64), expiresAt: new Date() },
+      });
+      const product = await tx.product.create({ data: { name: "schema-test", category: "test", type: "READY_STOCK" } });
+      const media = await tx.productMedia.create({
+        data: { productId: product.id, publicId: "schema-test", kind: "IMAGE", version: 1, format: "jpg", width: 1, height: 1, bytes: 1 },
+      });
+      const order = await tx.order.create({
+        data: { id: nextOrderId--, customerName: "schema-test", customerPhone: "6281200000000", fulfillment: "PICKUP", requestedDate: new Date() },
+      });
+      const item = await tx.orderItem.create({ data: { orderId: order.id, productName: "schema-test", quantity: 1 } });
+      const change = await tx.orderStatusChange.create({ data: { orderId: order.id, toStatus: "NEW" } });
+      const deletion = await tx.pendingDeletion.create({ data: { publicId: "schema-test", kind: "IMAGE" } });
+      for (const row of [admin, session, product, media, item, change, deletion]) expect(row.id).toMatch(V7);
+
+      const updated = await tx.product.update({ where: { id: product.id }, data: { name: "schema-test-2" } });
+      expect(updated.updatedAt.getTime()).toBeGreaterThan(product.updatedAt.getTime());
+    });
+  });
+});
+
+// Seed contents of M0.3 note 4 (P15), written from the task file, not copied from prisma/seed.ts.
+const P15 = [
+  ["Bolu Gulung", "Kue", "PRE_ORDER", null, null, "Lembut dengan filling nanas, strawberry, atau blueberry.", 1],
+  ["Fudgy Brownies", "Brownies", "PRE_ORDER", null, null, "Padat, nyoklat, dan moist. Ukuran 20×10 cm.", 2],
+  ["Brownies Custom", "Brownies", "PRE_ORDER", null, null, "Tulisan dan dekorasi sesuai request, cocok untuk kado.", 3],
+  ["Soft Cookies", "Cookies", "READY_STOCK", null, null, "Tebal, renyah di luar dan lembut di dalam.", 4],
+  ["Buko Mangga", "Dessert", "READY_STOCK", null, null, "Dessert mangga segar yang creamy dan dingin.", 5],
+  ["Donut", "Donut", "READY_STOCK", null, null, "", 6],
+  ["Hampers Natal", "Hampers", "PRE_ORDER", 35000, "2026-12-10", "Termasuk box, paper bag, kartu & hang tag edisi Natal.", 7],
+];
+
+describe("development seed (P15)", { timeout: 60_000 }, () => {
+  it("inserts the note 4 rows into an empty table, and nothing on a second run", async () => {
+    await inRolledBackTx(async (tx) => {
+      await tx.product.deleteMany();
+      expect(await seedProducts(tx)).toBe(7);
+      const rows = await tx.$queryRaw<Record<string, unknown>[]>`
+        SELECT name, category, type::text, price, order_deadline::text AS deadline, description, sort_order, is_active
+        FROM products ORDER BY sort_order`;
+      expect(rows.map((r) => [r.name, r.category, r.type, r.price, r.deadline, r.description, r.sort_order])).toEqual(P15);
+      expect(rows.every((r) => r.is_active === true)).toBe(true);
+      expect(await seedProducts(tx)).toBe(0);
+      expect(await tx.product.count()).toBe(7);
+    });
+  });
+
+  it("inserts nothing when products already has a row", async () => {
+    await inRolledBackTx(async (tx) => {
+      await tx.product.deleteMany();
+      await insertProduct(tx);
+      expect(await seedProducts(tx)).toBe(0);
+      expect(await tx.product.count()).toBe(1);
+    });
+  });
+});
+
+// Runs last in this file: the rolled-back tests above must not have consumed an order id.
+it("leaves orders_id_seq unchanged", async () => {
+  expect(await ordersSeq()).toBe(seqBefore);
 });
