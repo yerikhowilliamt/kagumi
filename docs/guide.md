@@ -205,6 +205,7 @@ prisma/
 tests/               Vitest tests; tests/db/ needs the development branch
 e2e/                 Playwright tests
 public/images/       Brand images
+images/              Original brand images, the source of the copies in src/app/ and public/images/; hampers-natal.jpg is uploaded through the admin later
 docs/                Design documents, ADRs and this guide
 prisma.config.ts     Prisma CLI config: schema, migrations, seed command, DIRECT_URL
 vercel.json          Function region sin1
