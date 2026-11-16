@@ -5,10 +5,11 @@ import { describe, expect, it } from "vitest";
 const root = join(import.meta.dirname, "..");
 const read = (path: string) => readFileSync(join(root, path), "utf8");
 const norm = (value: string) => value.replace(/\s+/g, " ").trim();
+const md = read("docs/design.md");
+const srcFiles = readdirSync(join(root, "src"), { recursive: true, encoding: "utf8" });
 
 // Token rows of design.md §2.1–2.4: | `--name` | `light` | `dark` | …
 function specTokens() {
-  const md = read("docs/design.md");
   const section = md.slice(md.indexOf("### 2.1 "), md.indexOf("### 2.5 "));
   const rows = [...section.matchAll(/^\| `(--[\w-]+)` \| `([^`]+)` \| `([^`]+)` \|/gm)];
   return rows.map(([, name, light, dark]) => ({ name, light: norm(light), dark: norm(dark) }));
@@ -53,6 +54,11 @@ describe("design tokens (design.md §2.1–2.4)", () => {
     expect(darkAttr.get(name)).toBe(value);
   });
 
+  // A fourth declaration would override the spec value in one theme.
+  it.each(tokens)("$name is declared only in the three token blocks", ({ name }) => {
+    expect(css.match(new RegExp(`(?<![\\w-])${name}\\s*:`, "g"))).toHaveLength(3);
+  });
+
   it("both dark blocks are identical", () => {
     expect(Object.fromEntries(darkMedia)).toEqual(Object.fromEntries(darkAttr));
   });
@@ -63,10 +69,74 @@ describe("design tokens (design.md §2.1–2.4)", () => {
   });
 });
 
+describe("§4 tokens and base rules (design.md §4, P17)", () => {
+  const s4 = md.slice(md.indexOf("## 4. "), md.indexOf("## 5. "));
+  // Text under `### heading`, up to the next ### heading.
+  const sub = (heading: string) => s4.slice(s4.indexOf(`### ${heading}`)).split(/\n### /)[0];
+  // Second cell of the table row whose first cell is `label`, without backticks.
+  function cell(text: string, label: string) {
+    const row = text.split("\n").find((line) => line.startsWith(`| ${label} |`));
+    if (!row) throw new Error(`no row ${label}`);
+    return norm(row.split("|")[2].replace(/`/g, ""));
+  }
+
+  it.each([
+    ["`r-xs`", "--r-xs"],
+    ["`r-sm`", "--r-sm"],
+    ["`r-md`", "--r-md"],
+    ["`--radius` (r-lg)", "--radius"],
+    ["`r-xl`", "--r-xl"],
+    ["`r-full`", "--r-full"],
+  ])("radius %s: %s is within its design.md value or range", (label, name) => {
+    const [min, max = min] = cell(sub("Border radius"), label).match(/\d+/g)!.map(Number);
+    const value = light.get(name);
+    expect(value).toMatch(/^\d+px$/);
+    expect(parseInt(value!)).toBeGreaterThanOrEqual(min);
+    expect(parseInt(value!)).toBeLessThanOrEqual(max);
+  });
+
+  it.each([
+    ["float", "--shadow-float"],
+    ["toast", "--shadow-toast"],
+    ["cta-glow", "--shadow-cta"],
+  ])("shadow %s equals %s", (label, name) => {
+    expect(light.get(name)).toBe(cell(sub("Shadow"), label));
+  });
+
+  it("--wrap and --gutter equal the layout table", () => {
+    expect(light.get("--wrap")).toBe(cell(sub("Layout"), "`--wrap`").split(" ")[0]);
+    expect(light.get("--gutter")).toBe(cell(sub("Layout"), "`--gutter`"));
+  });
+
+  it("--ease is the curve of the slow motion row", () => {
+    expect(light.get("--ease")).toBe(cell(sub("Motion"), "slow").replace(/^\S+ /, ""));
+  });
+
+  it("--burst is the §4 starburst polygon", () => {
+    expect(light.get("--burst")).toBe(norm(sub("Shape: starburst").match(/polygon\([^)]*\)/)![0]));
+  });
+
+  it("html and body base rules", () => {
+    const html = block("html");
+    const body = block("body");
+    expect(html.get("background")).toBe("var(--bg)");
+    expect(html.get("color")).toBe("var(--ink)");
+    expect(body.get("font-family")).toBe("var(--body)");
+    expect(body.get("-webkit-font-smoothing")).toBe("antialiased");
+  });
+});
+
+describe("theme script (M0.2 note 5)", () => {
+  it("dangerouslySetInnerHTML appears once in src/, in the root layout", () => {
+    const hits = srcFiles
+      .filter((f) => /\.[jt]sx?$/.test(f))
+      .flatMap((f) => (read(join("src", f)).match(/dangerouslySetInnerHTML/g) ?? []).map(() => f));
+    expect(hits).toEqual([join("app", "layout.tsx")]);
+  });
+});
+
 describe("components reference tokens only (design.md §2)", () => {
-  const modules = readdirSync(join(root, "src"), { recursive: true, encoding: "utf8" }).filter((f) =>
-    f.endsWith(".module.css"),
-  );
+  const modules = srcFiles.filter((f) => f.endsWith(".module.css"));
 
   it("finds the CSS modules", () => {
     expect(modules.length).toBeGreaterThan(0);

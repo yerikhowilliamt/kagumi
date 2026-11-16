@@ -7,6 +7,16 @@ const toggleName = "Ganti tema terang/gelap";
 const store = (page: Page, theme: string) =>
   page.addInitScript((t) => window.localStorage.setItem("kagumi-theme", t), theme);
 
+// exact: Playwright's default name match is a case-insensitive substring.
+const toggle = (page: Page) => page.getByRole("button", { name: toggleName, exact: true });
+
+// The icon of `theme` is visible and the other one hidden.
+async function expectIcon(page: Page, theme: "light" | "dark") {
+  const [shown, hidden] = theme === "light" ? ["sun", "moon"] : ["moon", "sun"];
+  await expect(toggle(page).locator(`[data-icon="${shown}"]`)).toBeVisible();
+  await expect(toggle(page).locator(`[data-icon="${hidden}"]`)).toBeHidden();
+}
+
 const dataTheme = (page: Page) => page.locator("html").getAttribute("data-theme");
 const bg = (page: Page) =>
   page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
@@ -38,6 +48,7 @@ for (const [os, stored] of [
     const atBody = await page.evaluate(() => (window as unknown as { __themeAtBody?: string | null }).__themeAtBody);
     expect(atBody).toBe(stored);
     expect(await bg(page)).toBe(BG[stored]);
+    await expectIcon(page, stored);
   });
 }
 
@@ -47,6 +58,17 @@ for (const os of ["light", "dark"] as const) {
     await page.goto("/");
     expect(await dataTheme(page)).toBeNull();
     expect(await bg(page)).toBe(BG[os]);
+  });
+}
+
+// Task note 5: data-theme is set only for "light" or "dark".
+for (const value of ["blue", "DARK"]) {
+  test(`stored "${value}" is ignored: follows OS dark`, async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await store(page, value);
+    await page.goto("/");
+    expect(await dataTheme(page)).toBeNull();
+    expect(await bg(page)).toBe(BG.dark);
   });
 }
 
@@ -65,53 +87,55 @@ test("localStorage throwing: page renders, follows OS, toggle works, no page err
   expect(await dataTheme(page)).toBeNull();
   expect(await bg(page)).toBe(BG.dark);
 
-  await page.getByRole("button", { name: toggleName }).click();
+  await toggle(page).click();
   expect(await dataTheme(page)).toBe("light");
   expect(await bg(page)).toBe(BG.light);
   expect(errors).toEqual([]);
 });
 
-test("toggle: icon, keyboard, flips, stores, survives reload", async ({ page }) => {
+test("toggle: icon, label, keyboard, flips, stores, survives reload", async ({ page }) => {
   const errors = collectPageErrors(page);
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
-  const toggle = page.getByRole("button", { name: toggleName });
-  const sun = toggle.locator('[data-icon="sun"]');
-  const moon = toggle.locator('[data-icon="moon"]');
-  await expect(sun).toBeVisible();
-  await expect(moon).toBeHidden();
+  await expect(toggle(page)).toHaveAttribute("aria-label", toggleName);
+  await expectIcon(page, "light");
 
   // The toggle is the only focusable element, so one Tab reaches it.
   await page.keyboard.press("Tab");
-  await expect(toggle).toBeFocused();
+  await expect(toggle(page)).toBeFocused();
   await page.keyboard.press("Enter");
   expect(await dataTheme(page)).toBe("dark");
   expect(await page.evaluate(() => localStorage.getItem("kagumi-theme"))).toBe("dark");
-  await expect(moon).toBeVisible();
-  await expect(sun).toBeHidden();
+  await expectIcon(page, "dark");
 
   await page.reload();
   expect(await dataTheme(page)).toBe("dark");
-  await expect(moon).toBeVisible();
+  await expectIcon(page, "dark");
   expect(await bg(page)).toBe(BG.dark);
 
   await page.keyboard.press("Tab");
-  await expect(toggle).toBeFocused();
+  await expect(toggle(page)).toBeFocused();
   await page.keyboard.press("Space");
   expect(await dataTheme(page)).toBe("light");
   expect(await page.evaluate(() => localStorage.getItem("kagumi-theme"))).toBe("light");
-  await expect(sun).toBeVisible();
+  await expectIcon(page, "light");
   expect(errors).toEqual([]);
 });
 
 test("toggle from OS dark with nothing stored switches to light", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/");
-  const toggle = page.getByRole("button", { name: toggleName });
-  await expect(toggle.locator('[data-icon="moon"]')).toBeVisible();
-  await toggle.click();
+  await expectIcon(page, "dark");
+  await toggle(page).click();
   expect(await dataTheme(page)).toBe("light");
   expect(await bg(page)).toBe(BG.light);
+  await expectIcon(page, "light");
+});
+
+test("reduced motion: the toggle has no transition", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/");
+  expect(await toggle(page).evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
 });
 
 for (const theme of ["light", "dark"] as const) {
@@ -142,4 +166,28 @@ test("fonts are self-hosted: no request to Fontshare or Google Fonts", async ({ 
   expect(fontOrigins.length).toBeGreaterThanOrEqual(2);
   expect(new Set(fontOrigins)).toEqual(new Set([new URL(baseURL!).origin]));
   expect(hosts.filter((h) => /(^|\.)(fontshare\.com|fonts\.googleapis\.com|fonts\.gstatic\.com)$/.test(h))).toEqual([]);
+});
+
+test("fonts: weights, display swap and system-ui fallback (task note 4)", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => document.fonts.ready);
+  const fonts = await page.evaluate(() =>
+    ["--head", "--body"].map((variable) => {
+      const stack = getComputedStyle(document.documentElement).getPropertyValue(variable).trim();
+      const family = stack.split(",")[0].replace(/"/g, "");
+      const faces = [...document.fonts].filter((f) => f.family.replace(/"/g, "") === family);
+      return {
+        stack,
+        weights: [...new Set(faces.map((f) => f.weight))].sort(),
+        displays: [...new Set(faces.map((f) => f.display))],
+      };
+    }),
+  );
+  const [head, body] = fonts;
+  expect(head.weights).toEqual(["500", "600"]);
+  expect(body.weights).toEqual(["400", "500", "600"]);
+  for (const font of fonts) {
+    expect(font.stack).toMatch(/, system-ui, sans-serif$/);
+    expect(font.displays).toEqual(["swap"]);
+  }
 });
