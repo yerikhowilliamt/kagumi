@@ -19,6 +19,17 @@ const products = [
   },
 ] as const;
 
+/**
+ * Throws unless DATABASE_URL points at the development branch named in DEV_DATABASE_HOST (direct host).
+ * Guards the seed and tests/db against a production URL pasted into .env (milestone plan R2).
+ */
+export function assertDevelopmentDatabase(env: Record<string, string | undefined> = process.env) {
+  const host = env.DATABASE_URL ? new URL(env.DATABASE_URL).hostname.replace("-pooler.", ".") : undefined;
+  if (!env.DEV_DATABASE_HOST || host !== env.DEV_DATABASE_HOST) {
+    throw new Error("DATABASE_URL is not the development branch named in DEV_DATABASE_HOST; refusing to run");
+  }
+}
+
 /** Inserts the P15 menu when `products` is empty; returns the number of rows inserted. */
 export async function seedProducts(client: Prisma.TransactionClient) {
   if ((await client.product.count()) > 0) return 0;
@@ -32,6 +43,7 @@ if (import.meta.main) {
   try {
     process.loadEnvFile();
   } catch {}
+  assertDevelopmentDatabase();
   // Dynamic import: db.ts reads DATABASE_URL on load, so .env must be loaded first.
   const { db } = await import("../src/lib/db.ts");
   try {

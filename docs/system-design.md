@@ -188,7 +188,7 @@ Money is stored as an integer in rupiah. There are no decimals and no currency c
 |---|---|---|---|
 | Production | Vercel production deployment | Neon production branch | Applied by the build step, before the Next.js build, with Prisma's deploy command (ADR-0002). A failed migration fails the build, and the previous deployment keeps serving |
 | Preview | Vercel preview deployments | Neon development branch (§9) | Same build step, against the development branch |
-| Local | Developer machine | Neon development branch (§9) | Prisma's development migration command |
+| Local | Developer machine | Neon development branch (§9) | Generated with Prisma's diff command, checked for drops of the raw-SQL CHECK constraints and the partial unique index, then applied with Prisma's deploy command. Never the development migration command: it needs a shadow database and would drop the raw-SQL objects |
 
 - Each Vercel environment has its own `DATABASE_URL` and `DIRECT_URL`. The production values are set only for the Production environment.
 - Vercel Cron runs only on the production deployment, so the cleanup job never touches the development branch.

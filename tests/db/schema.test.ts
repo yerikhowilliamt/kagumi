@@ -3,11 +3,12 @@
 // Writes happen only inside transactions that are always rolled back. Orders get explicit ids,
 // because ROLLBACK does not undo nextval(); the last test checks orders_id_seq did not move.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { seedProducts } from "../../prisma/seed.ts";
+import { assertDevelopmentDatabase, seedProducts } from "../../prisma/seed.ts";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set: tests/db needs the development branch in .env");
 }
+assertDevelopmentDatabase();
 
 const { db } = await import("@/lib/db");
 

@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude 'tests/db/**'",
     "test:e2e": "playwright test",
     "postinstall": "prisma generate"
   },
