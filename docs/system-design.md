@@ -186,11 +186,12 @@ Money is stored as an integer in rupiah. There are no decimals and no currency c
 
 | Environment | Runs on | Database | Migrations |
 |---|---|---|---|
-| Production | Vercel production deployment | Neon production branch | Applied by the build step, before the Next.js build, with Prisma's deploy command (ADR-0002). A failed migration fails the build, and the previous deployment keeps serving |
+| Production | Vercel production deployment | Neon production branch | Applied by the build step, before the Next.js build, with Prisma's deploy command (ADR-0002): `buildCommand` in `vercel.json` is `prisma migrate deploy && next build`. A failed migration fails the build, and the previous deployment keeps serving. A local `npm run build` runs only `next build` and touches no database |
 | Preview | Vercel preview deployments | Neon development branch (§9) | Same build step, against the development branch |
 | Local | Developer machine | Neon development branch (§9) | Generated with Prisma's diff command, checked for drops of the raw-SQL CHECK constraints and the partial unique index, then applied with Prisma's deploy command. Never the development migration command: it needs a shadow database and would drop the raw-SQL objects |
 
 - Each Vercel environment has its own `DATABASE_URL` and `DIRECT_URL`. The production values are set only for the Production environment.
+- The variables are entered by hand per Vercel environment. The Neon Vercel integration is not installed: it would create a database branch per preview deployment, while previews must use the one development branch.
 - Vercel Cron runs only on the production deployment, so the cleanup job never touches the development branch.
 - Migrations must stay compatible with the deployment that is live while the new one builds: add columns and tables first, and remove old ones in a later deploy.
 
@@ -301,6 +302,7 @@ The choices most expensive to reverse are recorded as ADRs: [ADR-0001](adrs/0001
 | Storefront revalidation | On-demand (`products` tag) + 1-hour fallback |
 | Cron schedule | `0 19 * * *` UTC (02:00 WIB) |
 | Cart / theme storage keys | `kagumi-cart`, `kagumi-theme` |
+| Hosting region | Vercel functions in `sin1` (Singapore), set by `regions` in `vercel.json`. Neon in AWS `ap-southeast-1` (Singapore) |
 | Development and test database | A separate Neon branch, treated as disposable. Tests, seeds and scripts run from a developer machine use only this branch, never the production branch |
 
 ## 10. Verification Plan
