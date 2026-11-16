@@ -280,7 +280,7 @@ The choices most expensive to reverse are recorded as ADRs: [ADR-0001](adrs/0001
 - **Secrets** (Vercel env only, never shipped to the client): `DATABASE_URL`, `DIRECT_URL`, `CLOUDINARY_API_SECRET`, `TRACKING_SECRET`, `CRON_SECRET`, `ADMIN_EMAIL`/`ADMIN_PASSWORD` (seed only). Only `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` and the WhatsApp number are public.
 - **Uploads:** only signed uploads, signatures only for a logged-in admin, response signature and limits verified before saving (4.5).
 - **SQL injection:** Prisma parameterizes all queries. Raw SQL only through tagged templates.
-- **Headers:** `Content-Security-Policy` allowing self, Cloudinary (`res.cloudinary.com`, `api.cloudinary.com`), Fontshare and Google Fonts. `script-src` is `'self' 'unsafe-inline'`: the home page is static, and both the theme script (4.2) and Next.js's own bootstrap scripts are inline. A nonce-based policy would force every page to render dynamically and break the static-rendering requirement. So the CSP limits where scripts load from and where the page may connect or be framed, and protection against injected markup rests on React's escaping. Plus `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`.
+- **Headers:** `Content-Security-Policy` allowing self, Cloudinary (`res.cloudinary.com`, `api.cloudinary.com`). Fonts are self-hosted ([design.md](design.md) §3), so no font origin is needed. `script-src` is `'self' 'unsafe-inline'`: the home page is static, and both the theme script (4.2) and Next.js's own bootstrap scripts are inline. A nonce-based policy would force every page to render dynamically and break the static-rendering requirement. So the CSP limits where scripts load from and where the page may connect or be framed, and protection against injected markup rests on React's escaping. Plus `X-Frame-Options: DENY` and `Referrer-Policy: strict-origin-when-cross-origin`.
 
 ## 9. Configured Values
 
@@ -324,7 +324,7 @@ The choices most expensive to reverse are recorded as ADRs: [ADR-0001](adrs/0001
 - **Prisma bundle size and cold start** on Vercel functions: check during setup that the Rust-free client + Neon adapter work as expected. Fall back to the pooled connection string with the standard driver if needed.
 - **WhatsApp hand-off on iOS/in-app browsers** (Instagram's in-app browser): test that `location.href = wa.me/...` opens WhatsApp. The confirmation screen keeps a "Buka WhatsApp lagi" button as a manual fallback.
 - **Order spam:** rate limits slow it down but can't stop a determined attacker. If it happens, add a lightweight challenge later.
-- **Fonts:** Fontshare CDN vs self-hosting Switzer ([design.md](design.md) §9).
+- **Fonts:** decided 2026-11-16: both fonts are self-hosted ([design.md](design.md) §3).
 
 ---
 

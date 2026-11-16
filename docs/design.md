@@ -106,8 +106,9 @@ Text on `--blue` may use `rgb(255 255 255 / .75–.85)` for secondary copy. Don'
 
 ## 3. Typography
 
-- **Headings & UI:** `Switzer` (Fontshare), fallback `system-ui, sans-serif`. Token `--head`.
+- **Headings & UI:** `Switzer` (Fontshare, ITF Free Font License), weights 500/600, fallback `system-ui, sans-serif`. Token `--head`.
 - **Body:** `Figtree` (Google Fonts), weights 400/500/600, fallback `system-ui, sans-serif`. Token `--body`. `-webkit-font-smoothing: antialiased`.
+- **Loading:** both fonts are self-hosted from the site's own origin with `display: swap` (decided 2026-11-16). Switzer from the Fontshare `woff2` files with `next/font/local`, Figtree with `next/font/google`, which downloads it at build time. No request goes to Fontshare or Google when a page loads. The Switzer license allows self-hosting for our own site but not redistribution, so the repository stays private.
 - **Numbers:** `font-variant-numeric: tabular-nums` for prices, quantities, KPIs, tables and timestamps.
 
 ### Type scale
@@ -449,5 +450,4 @@ Centered 400px card (`--surface`, radius 24px, padding 36px 32px) over the page 
 
 - **Logo file:** the IG logo has a cream square background, which shows as a cream disc inside bursts (in both themes). A transparent PNG/SVG from the owner would look cleaner.
 - **Product photos:** placeholders until the owner uploads originals. Photos should be shot consistently (same light and background) so the 4/5 grid looks even.
-- **Fonts:** load Switzer from the Fontshare CDN, or self-host it (better performance and privacy)? Decide during project setup.
 - **Copy:** headline, descriptions, checkout helper texts and the CTA are drafts and need the owner's review.
