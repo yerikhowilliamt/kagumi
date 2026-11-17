@@ -242,6 +242,12 @@ describe("buildOrderMessage (D1, FR13)", () => {
     expect(buildOrderMessage({ orderNumber: "KD-0065", lines: LINES, customer })).toBe(SUCCESS);
   });
 
+  it("keeps line breaks inside the address and the note", () => {
+    const message = buildOrderMessage({ lines: LINES, customer: { ...CUSTOMER, address: "Jl. A\nRT 01", note: "a\nb" } });
+    expect(message).toContain("\nAlamat: Jl. A\nRT 01\n");
+    expect(message.endsWith("\nCatatan: a\nb")).toBe(true);
+  });
+
   it("never contains the customer's phone (System Design §4.3 step 5)", () => {
     const customer = { ...CUSTOMER, customerPhone: "6281234567890" };
     const message = buildOrderMessage({ orderNumber: "KD-0065", lines: LINES, customer });

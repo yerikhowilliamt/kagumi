@@ -50,7 +50,7 @@ const lines = (n: number) => Array.from({ length: n }, (_, i) => ({ productId: i
 
 describe("normalizePhone (System Design §9)", () => {
   it("normalizes the accepted forms to 628…", () => {
-    for (const raw of ["0812-3456-7890", "+62 812 3456 7890", "6281234567890", "(0812) 3456.7890", " 0812 3456\t7890 "]) {
+    for (const raw of ["0812-3456-7890", "+62 812 3456 7890", "6281234567890", "(0812) 3456.7890", " 0812\u00a03456\t7890 "]) {
       expect(normalizePhone(raw)).toBe("6281234567890");
     }
   });
@@ -160,6 +160,10 @@ describe("checkoutSchema(today) (D2 input, D10 messages)", () => {
       expect(accepted({ ...DELIVERY, address: "a".repeat(300) }).address).toHaveLength(300);
     });
 
+    it("delivery: keeps line breaks inside", () => {
+      expect(accepted({ ...DELIVERY, address: "Jl. A\nRT 01\n" }).address).toBe("Jl. A\nRT 01");
+    });
+
     it("delivery: required and not blank", () => {
       for (const input of [withoutAddress, { ...DELIVERY, address: "" }, { ...DELIVERY, address: "   " }, { ...DELIVERY, address: null }]) {
         expect(errors(input)).toEqual({ address: MESSAGE.addressRequired });
@@ -231,6 +235,14 @@ describe("checkoutSchema(today) (D2 input, D10 messages)", () => {
       expect(accepted({ ...DELIVERY, note: "a".repeat(500) }).note).toHaveLength(500);
     });
 
+    it("keeps line breaks inside", () => {
+      expect(accepted({ ...DELIVERY, note: " a\nb " }).note).toBe("a\nb");
+    });
+
+    it("rejects null", () => {
+      expect(errors({ ...DELIVERY, note: null })).toEqual({ note: MESSAGE.noteMax });
+    });
+
     it("blank or missing becomes null", () => {
       const { note, ...missing } = DELIVERY;
       expect(note).toBeTruthy();
@@ -258,6 +270,12 @@ describe("checkoutSchema(today) (D2 input, D10 messages)", () => {
       expect(accepted({ ...DELIVERY, items }).items).toEqual(items);
     });
 
+    it("returns ids in lower case", () => {
+      expect(accepted({ ...DELIVERY, items: [{ productId: id(10).toUpperCase(), quantity: 1 }] }).items).toEqual([
+        { productId: id(10), quantity: 1 },
+      ]);
+    });
+
     it.each([
       ["no items key", undefined],
       ["not an array", "x"],
@@ -272,6 +290,7 @@ describe("checkoutSchema(today) (D2 input, D10 messages)", () => {
       ["id missing", [{ quantity: 1 }]],
       ["line not an object", ["x"]],
       ["a repeated id", [{ productId: id(1), quantity: 1 }, { productId: id(2), quantity: 1 }, { productId: id(1), quantity: 2 }]],
+      ["a repeated id in another letter case", [{ productId: id(10), quantity: 1 }, { productId: id(10).toUpperCase(), quantity: 1 }]],
     ])("rejects %s", (_, items) => {
       expect(errors({ ...DELIVERY, items })).toEqual({ items: MESSAGE.items });
     });

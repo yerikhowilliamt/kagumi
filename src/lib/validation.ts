@@ -60,7 +60,8 @@ export function checkoutSchema(today: string) {
     items: z
       .array(
         z.object(
-          { productId: z.uuid(ITEMS), quantity: z.number(ITEMS).int(ITEMS).min(1, ITEMS).max(MAX_QTY, ITEMS) },
+          // Lower case: a UUID is case-insensitive, so the repeat check and the product lookup see one spelling.
+          { productId: z.uuid(ITEMS).toLowerCase(), quantity: z.number(ITEMS).int(ITEMS).min(1, ITEMS).max(MAX_QTY, ITEMS) },
           ITEMS,
         ),
         ITEMS,
