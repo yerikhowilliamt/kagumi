@@ -518,7 +518,7 @@
 }
 
 @media (max-width: 640px) {
-  /* Logo, theme toggle, WhatsApp, and the cart button from M1.5 must fit 320px. */
+  /* Logo, theme toggle, WhatsApp and the M1.5 cart button must fit 360px (PRD); M1.5 checks it with the real button. */
   .wordmark {
     display: none;
   }

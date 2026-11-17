@@ -43,7 +43,8 @@ const getProducts = unstable_cache(
     // Mapped inside the cache: a cached result is JSON, so a Date would come back as a string.
     return rows.map(toStoreProduct);
   },
-  ["store-products"],
+  // The mapper's text is part of the key, so a change to the mapped shape never reads an old entry.
+  ["store-products", toStoreProduct.toString()],
   { tags: ["products"], revalidate: 3600 },
 );
 

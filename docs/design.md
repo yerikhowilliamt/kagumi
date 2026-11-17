@@ -174,7 +174,7 @@ Secondary copy on `--blue` uses `--on-blue-muted`. It is fixed at .85 because wh
 |---|---|
 | `--wrap` | 1180px max content width (storefront) |
 | `--gutter` | `clamp(20px, 4vw, 40px)` |
-| Storefront nav | sticky, 72px. scroll-padding-top 84px |
+| Storefront nav | sticky, 72px. Anchor targets: scroll-margin-top 84px |
 | Admin sidebar | 248px, sticky full-height |
 | Admin main padding | `28px clamp(16px, 3vw, 40px) 96px` |
 | Admin mobile topbar / bottom nav | 60px / ~64px + safe-area |

@@ -2,16 +2,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/(store)/page";
+import { toStoreProduct } from "@/lib/menu";
 
 const { findMany, cached } = vi.hoisted(() => ({
   findMany: vi.fn(),
-  cached: [] as { fn: () => Promise<unknown>; options: unknown }[],
+  cached: [] as { fn: () => Promise<unknown>; keys: string[]; options: unknown }[],
 }));
 
 vi.mock("@/lib/db", () => ({ db: { product: { findMany } } }));
 vi.mock("next/cache", () => ({
-  unstable_cache: (fn: () => Promise<unknown>, _keys: unknown, options: unknown) => {
-    cached.push({ fn, options });
+  unstable_cache: (fn: () => Promise<unknown>, keys: string[], options: unknown) => {
+    cached.push({ fn, keys, options });
     return fn;
   },
 }));
@@ -40,6 +41,10 @@ describe("storefront page", () => {
     const products = (await cached[0].fn()) as { orderDeadline: unknown }[];
     expect(products.map((p) => p.orderDeadline)).toEqual([null, "2026-12-10"]);
     expect(JSON.parse(JSON.stringify(products))).toEqual(products);
+  });
+
+  it("keys the cache on the mapper's text, so a new mapped shape never reads an old entry (TR-M1.2-03)", () => {
+    expect(cached[0].keys).toContain(toStoreProduct.toString());
   });
 
   it("renders the marquee with each product name twice", async () => {

@@ -70,7 +70,8 @@ test("an anchor target lands 84px below the top, without smooth scrolling (M1.2 
 });
 
 test("the nav stays one row without horizontal scroll at every breakpoint edge (design.md §4)", async ({ page }) => {
-  for (const width of [320, 360, 640, 641, 760, 960, 961, 1280]) {
+  // 360px is the minimum width (PRD, Mobile first).
+  for (const width of [360, 640, 641, 760, 960, 961, 1280]) {
     await page.setViewportSize({ width, height: 800 });
     const layout = await page.locator("header").evaluate((header) => {
       const wrapped: string[] = [];
