@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("home page serves the placeholder with metadata and icons", async ({ page, request }) => {
+test("home page serves the storefront with metadata and icons", async ({ page, request }) => {
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
 

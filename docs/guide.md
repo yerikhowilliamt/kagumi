@@ -8,7 +8,7 @@ Every command in this guide was run during M0 or is a script in `package.json`. 
 
 Kagumi Dough is the website of a homemade bakery in Surakarta (Solo): a storefront with a cart that sends one prefilled WhatsApp order, and an admin dashboard for products and media, orders and statistics.
 
-After M0 the repository holds the foundation only: design tokens and the theme toggle, the full database schema with one migration, a development seed, and a placeholder home page that shows the number of active products. M1 replaces that page with the static storefront.
+M0 built the foundation: design tokens and the theme toggle, the full database schema with one migration, and a development seed. M1 builds the storefront on it. So far that is the shared order rules in `src/lib` and a statically rendered home page with the navigation, hero, product-name marquee, how-to-order steps, CTA band and footer. The menu, product detail, cart and checkout follow in the later M1 tasks.
 
 **Stack**
 
@@ -79,7 +79,7 @@ The output must be `ep-noisy-fog-a1x76fct.ap-southeast-1.aws.neon.tech neondb`. 
 npm run dev
 ```
 
-Open http://localhost:3000. The page shows `Produk aktif: N`, read from the development branch.
+Open http://localhost:3000. The storefront shows the products of the development branch. The dev server renders the page on every request, but the product list is cached (`unstable_cache`, tag `products`, revalidate 3600 s) under `.next/dev/cache`, so a second request does not query the database.
 
 ## 3. Commands
 
@@ -94,7 +94,7 @@ Every script in `package.json`:
 | `npm run typecheck` | `next typegen && tsc --noEmit` | Generates Next.js route types, then type-checks |
 | `npm test` | `vitest run` | All Vitest tests, **including `tests/db`**, which connect to the development branch and write inside transactions that are always rolled back |
 | `npm run test:unit` | `vitest run --exclude 'tests/db/**'` | Vitest tests that need no database |
-| `npm run test:e2e` | `playwright test` | Playwright tests in `e2e/` at 360 px and desktop width. Starts `npm run dev` itself unless `PLAYWRIGHT_BASE_URL` is set. Until M1 the home page queries the database on each request, so this run reads the development branch and fails when Neon is down |
+| `npm run test:e2e` | `playwright test` | Playwright tests in `e2e/` at 360 px and desktop width. Starts `npm run dev` itself unless `PLAYWRIGHT_BASE_URL` is set. The home page reads its products from the development branch (cached by the dev server, §2), and `e2e/storefront.spec.ts` expects the product names of the seed in `sortOrder` |
 | `npm run vercel-build` | `prisma migrate deploy && next build` | **Run by Vercel only**, instead of `build`. Applies pending migrations to the branch of that Vercel environment, then builds. Never run it locally |
 | `postinstall` | `prisma generate` | Runs automatically after `npm ci`; regenerates the Prisma client |
 
@@ -192,10 +192,15 @@ Vercel Cron runs only on the production deployment, so scheduled jobs never touc
 
 ```
 src/
-  app/               App Router: layout.tsx (fonts, theme script), page.tsx (placeholder), icons
+  app/               App Router: layout.tsx (fonts, theme script), icons
+    (store)/page.tsx The storefront home page: static, products cached with the tag `products`
     fonts/           Self-hosted Switzer font files
-  components/        Shared components with their CSS Modules (ThemeToggle)
-  lib/db.ts          The Prisma client on the pooled URL through @prisma/adapter-neon
+  components/        Shared components with their CSS Modules (ThemeToggle, Button)
+  lib/
+    db.ts            The Prisma client on the pooled URL through @prisma/adapter-neon
+    order.ts         Order number, rupiah, WIB dates, the WhatsApp message and URL (no imports)
+    validation.ts    Checkout schema and phone normalization (zod)
+    menu.ts          Storefront product types and the row mapper (no imports)
   styles/tokens.css  Every design token, light and dark, and the global base rules
   generated/prisma/  Generated Prisma client (git-ignored, written by prisma generate)
 prisma/
@@ -254,7 +259,7 @@ The `@/` import alias points to `src/`. Files that the seed loads through Node (
 | --- | --- | --- |
 | `npm run build` or `npm run dev` fails with `DATABASE_URL is not set` | No `.env`, or the variable is empty | Create `.env` from `.env.example` with the development values (§2) |
 | `tests/db` or the seed stops with `… refusing to run` | `DATABASE_URL` is not the host in `DEV_DATABASE_HOST` | Run the host check (§2) and fix `.env`. Never "fix" the guard |
-| `npm run test:e2e` fails on the home page while other tests pass | The development branch is unreachable (the page queries it until M1) | Check Neon, then rerun |
+| `npm run typecheck` or `npm run build` fails in `.next/dev/types/validator.ts` with `Cannot find module ../../../src/app/page.js` after a route file was moved or deleted | `.next/dev/types` is left over from an earlier `npm run dev` | Start `npm run dev` or `npm run test:e2e` once; the dev server regenerates it |
 | A migration diff drops a CHECK constraint or `product_media_one_main_per_product` | `schema.prisma` does not model the raw-SQL objects | Remove the drop from the SQL before applying (§4) |
 | `prisma migrate dev` asks for a shadow database | It is the wrong command here | Use `migrate diff` and `migrate deploy` (§4) |
 | npm warns that install scripts of `prisma` / `@prisma/engines` were skipped | npm 11 `allowScripts` | Harmless; nothing needs them |

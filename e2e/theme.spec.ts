@@ -21,6 +21,14 @@ const dataTheme = (page: Page) => page.locator("html").getAttribute("data-theme"
 const bg = (page: Page) =>
   page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg").trim());
 
+// The storefront has focusable links before the toggle.
+async function tabToToggle(page: Page) {
+  for (let i = 0; i < 10 && !(await toggle(page).evaluate((el) => el === document.activeElement)); i++) {
+    await page.keyboard.press("Tab");
+  }
+  await expect(toggle(page)).toBeFocused();
+}
+
 function collectPageErrors(page: Page) {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -100,9 +108,7 @@ test("toggle: icon, label, keyboard, flips, stores, survives reload", async ({ p
   await expect(toggle(page)).toHaveAttribute("aria-label", toggleName);
   await expectIcon(page, "light");
 
-  // The toggle is the only focusable element, so one Tab reaches it.
-  await page.keyboard.press("Tab");
-  await expect(toggle(page)).toBeFocused();
+  await tabToToggle(page);
   await page.keyboard.press("Enter");
   expect(await dataTheme(page)).toBe("dark");
   expect(await page.evaluate(() => localStorage.getItem("kagumi-theme"))).toBe("dark");
@@ -113,8 +119,7 @@ test("toggle: icon, label, keyboard, flips, stores, survives reload", async ({ p
   await expectIcon(page, "dark");
   expect(await bg(page)).toBe(BG.dark);
 
-  await page.keyboard.press("Tab");
-  await expect(toggle(page)).toBeFocused();
+  await tabToToggle(page);
   await page.keyboard.press("Space");
   expect(await dataTheme(page)).toBe("light");
   expect(await page.evaluate(() => localStorage.getItem("kagumi-theme"))).toBe("light");
