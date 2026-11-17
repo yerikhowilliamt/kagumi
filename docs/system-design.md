@@ -111,6 +111,34 @@ tests/ (Vitest)  e2e/ (Playwright)
 3. Load the products from the DB. Reject if any product is missing, hidden, or past its `orderDeadline` (FR12).
 4. In one transaction: insert the `orders` row, its `order_items` (snapshotting name and unit price, FR13), the initial `order_status_changes` row (no previous status → `NEW`) and the `CHECKOUT` event. The order number is the order's auto-increment id, formatted as `KD-0001`.
 5. Build the WhatsApp message on the server (`lib/order.ts`) and return `{ orderNumber, waUrl }`. The customer's WhatsApp number is stored on the order but left out of the message, because the chat already shows the sender's number.
+
+   Message template (lines joined with `\n`, built by `buildOrderMessage`, the same function on the server and in the browser):
+
+   ```
+   Halo Kagumi Dough! Aku mau pesan (dari website)
+
+   No. pesanan: KD-0065
+   • 2× Hampers Natal — Rp70.000
+   • 1× Bolu Gulung — harga via WA
+
+   Subtotal: Rp70.000 (+ 1 produk harga via WA)
+   Nama: Rina
+   Pengambilan: Diantar
+   Alamat: Jl. Slamet Riyadi No. 1, Laweyan
+   Tanggal: Minggu, 20 Desember 2026
+   Catatan: Kartu ucapan "Selamat Natal"
+   ```
+
+   | Part | Rule |
+   | --- | --- |
+   | Header | Always `Halo Kagumi Dough! Aku mau pesan (dari website)`, then one empty line |
+   | Order number | `No. pesanan: KD-0065` (§9 format, no `#`). **Fallback (step 7): this line is left out**, so the lines follow the empty line directly |
+   | Line | `• {qty}× {name} — {line total}`; line total = `Rp` + `qty × unitPrice`; unpriced: `harga via WA`. Order = cart order. Names and prices: the database snapshot on the server, the page data in the fallback |
+   | Empty line | After the last line |
+   | Subtotal | All priced: `Subtotal: Rp70.000`. Some unpriced: `Subtotal: Rp70.000 (+ n produk harga via WA)`. None priced: `Subtotal: harga via WA` |
+   | Customer | `Nama:` · `Pengambilan: Ambil sendiri` or `Pengambilan: Diantar` · `Alamat:` only for delivery · `Tanggal: {Hari}, {d} {Bulan} {yyyy}` · `Catatan:` only when the note is not blank. Values trimmed. The customer's WhatsApp number is never in the message |
+   | URL | `https://wa.me/6285159545168?text=` + `encodeURIComponent(message)` |
+
 6. The client clears the cart, shows the confirmation step, and **navigates in the same tab** to `waUrl` (`window.location.href`). Opening a new window after an `await` is blocked by mobile popup blockers.
 7. **Fallback (FR14):** if the action fails (network, DB down), the client builds the same message without an order number from the cart, shows a notice, and still opens WhatsApp. The order then exists only in chat, and the admin can add it manually later if needed. In this case the cart is kept, so nothing is lost if WhatsApp doesn't open.
 
