@@ -43,6 +43,8 @@ test("every WhatsApp link is the plain shop link", async ({ page }) => {
   await expect(links).toHaveCount(4);
   const hrefs = await links.evaluateAll((all) => all.map((a) => a.getAttribute("href")));
   expect(hrefs).toEqual([WHATSAPP, WHATSAPP, WHATSAPP, WHATSAPP]);
+  // Same tab (M1.2 decision #8).
+  expect(await links.evaluateAll((all) => all.map((a) => a.getAttribute("target")))).toEqual([null, null, null, null]);
   await expect(page.getByRole("link", { name: "Pesan via WhatsApp" })).toHaveAttribute("href", WHATSAPP);
 });
 
@@ -50,19 +52,58 @@ test("Instagram link", async ({ page }) => {
   const link = page.getByRole("link", { name: /Instagram/ });
   await expect(link).toHaveAttribute("href", "https://www.instagram.com/kagumidough/");
   await expect(link).toHaveAttribute("rel", "noopener");
+  await expect(link).toHaveAttribute("target", "_blank");
 });
 
 test("three steps, footer Kontak and Lokasi", async ({ page }) => {
   await expect(page.locator("#cara-pesan").getByRole("listitem")).toHaveCount(3);
   const footer = page.locator("footer#kontak");
-  await expect(footer.getByRole("heading", { name: "Kontak", exact: true })).toBeVisible();
-  await expect(footer.getByRole("heading", { name: "Lokasi", exact: true })).toBeVisible();
+  // h2 in the eyebrow style (M1.2 decision #10).
+  await expect(footer.getByRole("heading", { name: "Kontak", exact: true, level: 2 })).toBeVisible();
+  await expect(footer.getByRole("heading", { name: "Lokasi", exact: true, level: 2 })).toBeVisible();
+});
+
+test("an anchor target lands 84px below the top, without smooth scrolling (M1.2 decision #5)", async ({ page }) => {
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior)).toBe("auto");
+  await page.getByRole("link", { name: "Lihat Menu" }).click();
+  await expect.poll(() => page.locator("#menu").evaluate((el) => Math.round(el.getBoundingClientRect().top))).toBe(84);
+});
+
+test("the nav stays one row without horizontal scroll at every breakpoint edge (design.md §4)", async ({ page }) => {
+  for (const width of [320, 360, 640, 641, 760, 960, 961, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    const layout = await page.locator("header").evaluate((header) => {
+      const wrapped: string[] = [];
+      const walker = document.createTreeWalker(header, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top)));
+        if (lines.size > 1) wrapped.push(node.textContent!.trim());
+      }
+      const root = document.documentElement;
+      return { wrapped, overflow: root.scrollWidth - root.clientWidth };
+    });
+    expect(layout, `${width}px`).toEqual({ wrapped: [], overflow: 0 });
+  }
+  // M1.2 decision #9.
+  await page.setViewportSize({ width: 360, height: 800 });
+  await expect(page.locator('nav[aria-label="Navigasi utama"]')).toHaveCSS("column-gap", "8px");
 });
 
 test("marquee lists the active product names in sortOrder, twice, and is aria-hidden", async ({ page }) => {
   const marquee = page.getByTestId("marquee");
   await expect(marquee).toHaveAttribute("aria-hidden", "true");
   expect(await marquee.locator("span").allTextContents()).toEqual([...SEED_NAMES, ...SEED_NAMES]);
+});
+
+test("marquee separators have the same colors in both copies, so the loop has no seam", async ({ page }) => {
+  const colors = await page
+    .getByTestId("marquee")
+    .locator("span")
+    .evaluateAll((spans) => spans.map((s) => getComputedStyle(s, "::after").backgroundColor));
+  expect(colors.slice(SEED_NAMES.length)).toEqual(colors.slice(0, SEED_NAMES.length));
+  expect(new Set(colors).size).toBe(3);
 });
 
 test("keyboard focus on the hero Primary button shows a 2px --link outline", async ({ page }) => {
@@ -89,6 +130,20 @@ test("the hero Primary button has a transition, and none with reduced motion", a
   expect(await duration()).not.toBe("0s");
   await page.emulateMedia({ reducedMotion: "reduce" });
   expect(await duration()).toBe("0s");
+});
+
+test("reduced motion stops every animation, including pseudo-elements (design.md §4 Motion)", async ({ page }) => {
+  const animated = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("*")].flatMap((el) =>
+        [null, "::before", "::after"]
+          .filter((pseudo) => getComputedStyle(el, pseudo).animationName !== "none")
+          .map((pseudo) => `${el.tagName}${pseudo ?? ""}`),
+      ),
+    );
+  expect((await animated()).length).toBeGreaterThan(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await animated()).toEqual([]);
 });
 
 test("the 42px nav button has a 44px hit area (design.md §5)", async ({ page }) => {

@@ -279,15 +279,19 @@
   content: "";
   width: 16px;
   height: 16px;
-  background: var(--blue);
   clip-path: var(--burst);
 }
 
-.name:nth-child(3n + 2)::after {
+/* Set by the position inside one copy of the list, so both copies match at the loop seam. */
+.blue::after {
+  background: var(--blue);
+}
+
+.amber::after {
   background: var(--amber);
 }
 
-.name:nth-child(3n)::after {
+.coral::after {
   background: var(--coral);
 }
 
@@ -491,6 +495,11 @@
 }
 
 @media (max-width: 960px) {
+  /* The full nav with the M1.5 cart button needs about 800px. */
+  .navLink {
+    display: none;
+  }
+
   .heroGrid {
     grid-template-columns: 1fr;
   }
@@ -510,7 +519,6 @@
 
 @media (max-width: 640px) {
   /* Logo, theme toggle, WhatsApp, and the cart button from M1.5 must fit 320px. */
-  .navLink,
   .wordmark {
     display: none;
   }

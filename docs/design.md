@@ -210,7 +210,7 @@ Flat by default. Depth comes from color blocks and hairlines.
 |---|---|---|
 | > 1180px | — | KPIs 4 columns, overview 1.6fr/1fr and 3-column rows |
 | ≤ 1180px | — | KPIs 2 columns, all two-column layouts stack |
-| ≤ 960px | Hero stacks, product grid 2 columns, CTA 1 column | — |
+| ≤ 960px | Nav text links hidden. Hero stacks, product grid 2 columns, CTA 1 column | — |
 | ≤ 760px | Product detail becomes a bottom sheet (92vh), cart sheet full width | Sidebar → topbar + bottom nav, tables → cards, sparklines hidden, FAB for "Tambah produk" |
 | ≤ 640px | Nav: logo + theme + WhatsApp + cart. Grid 1 column. Sticky cart bar appears when the cart has items | — |
 

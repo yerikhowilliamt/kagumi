@@ -47,6 +47,8 @@ const getProducts = unstable_cache(
   { tags: ["products"], revalidate: 3600 },
 );
 
+const SEPARATORS = [styles.blue, styles.amber, styles.coral];
+
 const FACTS = [
   ["PO & Ready Stock", "Pilih sesuai kebutuhan"],
   ["Antar / Ambil", "Fleksibel, kamu yang pilih"],
@@ -149,7 +151,7 @@ export default async function Home() {
           <div className={styles.marquee} aria-hidden="true" data-testid="marquee">
             <div className={styles.track}>
               {marquee.map((product, i) => (
-                <span key={i} className={styles.name}>
+                <span key={i} className={`${styles.name} ${SEPARATORS[(i % products.length) % 3]}`}>
                   {product.name}
                 </span>
               ))}
