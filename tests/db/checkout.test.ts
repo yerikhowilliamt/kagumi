@@ -1,12 +1,15 @@
 // placeOrder against the development branch (task M1.6 K2–K7), written from the milestone plan
 // (D2 §4.4, D5 §4.5, D7 §4.6) and System Design §4.3. Every checkout runs inside a transaction
 // that is always rolled back; only orders_id_seq moves (W2). The barrier test commits rows under a
-// random key and deletes them in afterAll.
+// random key and deletes them in afterAll. The checkout() tests commit (TEC-M1.6-02, approved
+// 2026-11-18): one order, events and rate_limits rows under unique names and keys, plus two products,
+// all deleted in afterAll.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { assertDevelopmentDatabase } from "../../prisma/seed.ts";
-import { placeOrder } from "@/lib/checkout";
-import { hitRateLimit } from "@/lib/tracking";
+import { checkout, placeOrder } from "@/lib/checkout";
+import { jakartaToday } from "@/lib/order";
+import { hitRateLimit, visitorHash as hashVisitor } from "@/lib/tracking";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set: tests/db needs the development branch in .env");
@@ -140,6 +143,36 @@ describe("placeOrder: a valid checkout (K2, K3)", { timeout: 60_000 }, () => {
     expect(text).not.toContain("6281234567890");
     expect(text).not.toContain("0812");
     expect(text).not.toContain("Fake");
+  });
+});
+
+describe("placeOrder: a delivery order (TEC-M1.6-04)", { timeout: 60_000 }, () => {
+  it("stores the trimmed address and note, and puts them into the message", async () => {
+    const name = `Delivery Test ${randomUUID()}`;
+    const r = await rolledBack(async (tx) => {
+      const p = await product(tx, { name: "Test Delivery", price: 20000 });
+      const result = await placeOrder(
+        tx,
+        {
+          ...customer(name),
+          fulfillment: "DELIVERY",
+          address: "  Jl. Uji Coba No. 1  ",
+          note: "  Kartu ucapan  ",
+          items: [{ productId: p.id, quantity: 1 }],
+        },
+        { visitorHash: newVisitor(), now: NOW },
+      );
+      return { result, order: await tx.order.findFirst({ where: { customerName: name } }) };
+    });
+    expect(r.order).toMatchObject({ fulfillment: "DELIVERY", address: "Jl. Uji Coba No. 1", note: "Kartu ucapan" });
+    if (!r.result.ok) throw new Error("expected ok");
+    const text = new URL(r.result.waUrl).searchParams.get("text")!;
+    expect(text.split("\n").slice(-4)).toEqual([
+      "Pengambilan: Diantar",
+      "Alamat: Jl. Uji Coba No. 1",
+      "Tanggal: Rabu, 25 November 2026",
+      "Catatan: Kartu ucapan",
+    ]);
   });
 });
 
@@ -291,8 +324,14 @@ describe("hitRateLimit under concurrency (K7)", { timeout: 60_000 }, () => {
     let signalA!: () => void;
     const aIncremented = new Promise<void>((resolve) => (signalA = resolve));
 
+    const backendPid = async (tx: Tx) => (await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`)[0].pid;
+    let pidA = 0;
+    let pidB = 0;
+    let signalB!: () => void;
+    const bStarted = new Promise<void>((resolve) => (signalB = resolve));
     const a = db.$transaction(
       async (tx) => {
+        pidA = await backendPid(tx);
         await hitRateLimit(tx, key, NOW, 100);
         signalA();
         await gateA;
@@ -300,15 +339,22 @@ describe("hitRateLimit under concurrency (K7)", { timeout: 60_000 }, () => {
       { timeout: 30_000 },
     );
     await aIncremented;
-    const b = db.$transaction((tx) => hitRateLimit(tx, key, NOW, 100), { timeout: 30_000 });
+    const b = db.$transaction(
+      async (tx) => {
+        pidB = await backendPid(tx);
+        signalB();
+        return hitRateLimit(tx, key, NOW, 100);
+      },
+      { timeout: 30_000 },
+    );
 
-    // Barrier: B is blocked on A's row lock before A commits.
+    // Barrier: B's own backend is blocked by A's backend (the row lock) before A commits (TEC-M1.6-03).
+    await bStarted;
     let waiting = false;
     for (let i = 0; i < 200 && !waiting; i++) {
-      const [{ n }] = await db.$queryRaw<{ n: number }[]>`
-        SELECT count(*)::int AS n FROM pg_stat_activity
-        WHERE wait_event_type = 'Lock' AND query LIKE '%rate_limits%' AND pid <> pg_backend_pid()`;
-      waiting = n > 0;
+      const [{ blocked }] = await db.$queryRaw<{ blocked: boolean }[]>`
+        SELECT ${pidA}::int = ANY(pg_blocking_pids(${pidB}::int)) AS blocked`;
+      waiting = blocked;
     }
     releaseA();
     await a;
@@ -318,6 +364,92 @@ describe("hitRateLimit under concurrency (K7)", { timeout: 60_000 }, () => {
     const [{ count }] = await db.$queryRaw<{ count: number }[]>`
       SELECT count FROM rate_limits WHERE key = ${key} AND window_start = ${WINDOW}`;
     expect(count).toBe(5);
+  });
+});
+
+describe("checkout() against the database: what commits (BSA-M1.6-02, TEC-M1.6-02)", { timeout: 60_000 }, () => {
+  const run = randomUUID();
+  const secret = `test-secret-${run}`;
+  const now = new Date();
+  const today = jakartaToday(now);
+  const yesterday = jakartaToday(new Date(now.getTime() - 86_400_000));
+  const ctx = (ua: string) => ({ ip: "203.0.113.7", ua: `kagumi-test ${run} ${ua}`, secret, now });
+  const keyOf = (ua: string) => `checkout:${hashVisitor(ctx(ua))}`;
+  const productIds: string[] = [];
+  const names = { ok: `Commit Test ${run}`, nul: `Nul Test ${run}` };
+
+  async function committedProduct(name: string, orderDeadline: string | null) {
+    const p = await db.product.create({
+      data: {
+        name,
+        category: "Test",
+        type: orderDeadline ? "PRE_ORDER" : "READY_STOCK",
+        price: 15000,
+        isActive: false, // never shown on the storefront
+        orderDeadline: orderDeadline ? new Date(`${orderDeadline}T00:00:00Z`) : null,
+      },
+    });
+    productIds.push(p.id);
+    return p;
+  }
+  const input = (name: string, productId: string) => ({
+    customerName: name,
+    customerPhone: "081200000000",
+    fulfillment: "PICKUP",
+    requestedDate: today,
+    items: [{ productId, quantity: 1 }],
+  });
+
+  afterAll(async () => {
+    const hashes = ["ok", "rejected", "limited", "nul"].map((ua) => hashVisitor(ctx(ua)));
+    await db.order.deleteMany({ where: { customerName: { in: [names.ok, names.nul] } } });
+    await db.event.deleteMany({ where: { visitorHash: { in: hashes } } });
+    await db.rateLimit.deleteMany({ where: { key: { in: hashes.map((h) => `checkout:${h}`) } } });
+    await db.product.deleteMany({ where: { id: { in: productIds } } });
+  });
+
+  it("commits the order, the event and the counter with the default transaction options", async () => {
+    // Inactive products are rejected, so the open product is active only for this test's checkout.
+    const p = await committedProduct(`Test Commit ${run}`, null);
+    await db.product.update({ where: { id: p.id }, data: { isActive: true } });
+    const result = await checkout(db, input(names.ok, p.id), ctx("ok"));
+    await db.product.update({ where: { id: p.id }, data: { isActive: false } });
+    expect(result).toMatchObject({ ok: true });
+    const order = await db.order.findFirst({ where: { customerName: names.ok }, include: { items: true, statusChanges: true } });
+    expect(order?.items).toHaveLength(1);
+    expect(order?.statusChanges).toHaveLength(1);
+    expect(await db.event.count({ where: { visitorHash: hashVisitor(ctx("ok")) } })).toBe(1);
+    expect((await db.rateLimit.findMany({ where: { key: keyOf("ok") } })).map((r) => r.count)).toEqual([1]);
+  });
+
+  it("keeps the counter when the cart is rejected", async () => {
+    const p = await committedProduct(`Test Closed ${run}`, yesterday);
+    await db.product.update({ where: { id: p.id }, data: { isActive: true } });
+    const result = await checkout(db, input(names.ok, p.id), ctx("rejected"));
+    await db.product.update({ where: { id: p.id }, data: { isActive: false } });
+    expect(result).toEqual({ ok: false, error: "rejected", lines: [{ productId: p.id, reason: "closed" }] });
+    expect((await db.rateLimit.findMany({ where: { key: keyOf("rejected") } })).map((r) => r.count)).toEqual([1]);
+  });
+
+  it("keeps the counter when the visitor is rate limited", async () => {
+    const windowStart = new Date(Math.floor(now.getTime() / 600_000) * 600_000);
+    await db.rateLimit.create({ data: { key: keyOf("limited"), windowStart, count: 5 } });
+    const result = await checkout(db, input(names.ok, randomUUID()), ctx("limited"));
+    expect(result).toEqual({ ok: false, error: "rate_limited" });
+    expect((await db.rateLimit.findMany({ where: { key: keyOf("limited") } })).map((r) => r.count)).toEqual([6]);
+  });
+
+  it("rolls back everything, the counter included, when a write throws (U+0000 in the name)", async () => {
+    const p = await committedProduct(`Test Nul ${run}`, null);
+    await db.product.update({ where: { id: p.id }, data: { isActive: true } });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await checkout(db, input(`${names.nul}\u0000`, p.id), ctx("nul"));
+    spy.mockRestore();
+    await db.product.update({ where: { id: p.id }, data: { isActive: false } });
+    expect(result).toEqual({ ok: false, error: "server" });
+    expect(await db.order.count({ where: { customerName: { startsWith: names.nul } } })).toBe(0);
+    expect(await db.event.count({ where: { visitorHash: hashVisitor(ctx("nul")) } })).toBe(0);
+    expect(await db.rateLimit.count({ where: { key: keyOf("nul") } })).toBe(0);
   });
 });
 

@@ -1,6 +1,7 @@
 // Server failure without a database (D11, task M1.6 K8, K10). Written from the D2 contract.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { checkout } from "@/lib/checkout";
+import { visitorHash } from "@/lib/tracking";
 
 vi.mock("next/headers", () => ({
   headers: async () => new Headers({ "x-forwarded-for": "203.0.113.7", "user-agent": "kagumi-test" }),
@@ -73,12 +74,29 @@ describe("src/app/(store)/actions.ts (D17)", () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
-  it("createOrder passes the database client and the request's visitor to checkout", async () => {
+  it("createOrder rate-limits by the visitor of the request's x-forwarded-for and user-agent (BSA-M1.6-01)", async () => {
     vi.stubEnv("TRACKING_SECRET", "test-secret");
-    transaction.mockRejectedValue(new Error("stop here"));
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const { createOrder } = await import("@/app/(store)/actions");
-    await expect(createOrder(CUSTOMER)).resolves.toEqual({ ok: false, error: "server" });
-    expect(transaction).toHaveBeenCalledOnce();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-20T03:00:00Z"));
+    try {
+      // The tx stub records the rate-limit statement's values, then stops the checkout.
+      const values: unknown[][] = [];
+      const tx = {
+        $queryRaw: (_sql: TemplateStringsArray, ...args: unknown[]) => {
+          values.push(args);
+          throw new Error("stop here");
+        },
+      };
+      transaction.mockImplementation((fn: (t: unknown) => Promise<unknown>) => fn(tx));
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const { createOrder } = await import("@/app/(store)/actions");
+      await expect(createOrder(CUSTOMER)).resolves.toEqual({ ok: false, error: "server" });
+      // headers() above: x-forwarded-for 203.0.113.7, user-agent kagumi-test.
+      const expected = visitorHash({ ip: "203.0.113.7", ua: "kagumi-test", now: new Date(), secret: "test-secret" });
+      expect(values[0][0]).toBe(`checkout:${expected}`);
+      expect(values[0][0]).not.toBe(`checkout:${visitorHash({ ip: "", ua: "", now: new Date(), secret: "test-secret" })}`);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
