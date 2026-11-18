@@ -13,7 +13,8 @@ const cartButton = (page: Page) => page.getByRole("button", { name: /^Buka keran
 const sheet = (page: Page) => page.getByRole("dialog", { name: "Keranjang" });
 const line = (page: Page, name: string) =>
   sheet(page).getByRole("listitem").filter({ has: page.getByText(name, { exact: true }) });
-// By attribute: the steppers' <output> elements have the status role too.
+// By attribute: the steppers' <output> elements have the status role too. The last toast stays in the DOM after a
+// hide (it fades out, then its content is visibility: hidden), so visible text is read with `useInnerText`.
 const toast = (page: Page) => page.locator('[role="status"]');
 const bar = (page: Page) => page.getByRole("button", { name: /^Lihat keranjang · / });
 
@@ -158,14 +159,18 @@ test.describe("toast (K5)", () => {
     await addFromCard(page, "Hampers Natal", 1);
     await expect(toast(page)).toHaveText("Hampers Natal ditambahkanLihat keranjang");
     await page.clock.runFor(2500);
-    await expect(toast(page)).toContainText("ditambahkan");
+    await expect(toast(page)).toContainText("ditambahkan", { useInnerText: true });
     await page.clock.runFor(200);
-    await expect(toast(page)).toHaveText("");
+    await expect(toast(page)).toHaveText("", { useInnerText: true });
+    // TR-M1.5-01: the content is kept, so the pill fades out instead of collapsing, but it can't be focused.
+    await expect(toast(page)).toHaveText("Hampers Natal ditambahkanLihat keranjang");
+    await expect(toast(page).locator("button")).toHaveCount(1);
+    await expect(toast(page).locator("button")).toBeHidden();
 
     await addButton(page, "Hampers Natal").click();
     await toast(page).getByRole("button", { name: "Lihat keranjang" }).click();
     await expect(sheet(page)).toBeVisible();
-    await expect(toast(page)).toHaveText("");
+    await expect(toast(page)).toHaveText("", { useInnerText: true });
   });
 
   test("stays while hovered or focused", async ({ page }) => {
@@ -173,15 +178,15 @@ test.describe("toast (K5)", () => {
     await addFromCard(page, "Hampers Natal", 1);
     await toast(page).hover();
     await page.clock.runFor(5000);
-    await expect(toast(page)).toContainText("ditambahkan");
+    await expect(toast(page)).toContainText("ditambahkan", { useInnerText: true });
     await page.mouse.move(0, 0);
     await page.clock.runFor(2700);
-    await expect(toast(page)).toHaveText("");
+    await expect(toast(page)).toHaveText("", { useInnerText: true });
 
     await addButton(page, "Hampers Natal").click();
     await toast(page).getByRole("button", { name: "Lihat keranjang" }).focus();
     await page.clock.runFor(5000);
-    await expect(toast(page)).toContainText("ditambahkan");
+    await expect(toast(page)).toContainText("ditambahkan", { useInnerText: true });
   });
 
   // BSA-M1.5-01: the button unmounts while focused or hovered, so its blur and pointerleave never reach the toast.
@@ -199,26 +204,28 @@ test.describe("toast (K5)", () => {
       await expect(sheet(page)).toBeVisible();
       await page.keyboard.press("Escape");
       await expect(sheet(page)).toBeHidden();
+      // TR-M1.5-03: the toast's button is gone, so focus returns to the nav cart button, not the document start.
+      await expect(cartButton(page)).toBeFocused();
 
       await addButton(page, "Soft Cookies").click();
-      await expect(toast(page)).toContainText("Soft Cookies ditambahkan");
+      await expect(toast(page)).toContainText("Soft Cookies ditambahkan", { useInnerText: true });
       await page.clock.runFor(2700);
-      await expect(toast(page)).toHaveText("");
+      await expect(toast(page)).toHaveText("", { useInnerText: true });
     });
   }
 
   test("hides when a dialog opens", async ({ page }) => {
     await withClock(page);
     await addFromCard(page, "Hampers Natal", 1);
-    await expect(toast(page)).toContainText("ditambahkan");
+    await expect(toast(page)).toContainText("ditambahkan", { useInnerText: true });
     await page.getByRole("button", { name: "Lihat detail Soft Cookies", exact: true }).click();
-    await expect(toast(page)).toHaveText("");
+    await expect(toast(page)).toHaveText("", { useInnerText: true });
     await page.keyboard.press("Escape");
 
     await addButton(page, "Hampers Natal").click();
-    await expect(toast(page)).toContainText("ditambahkan");
+    await expect(toast(page)).toContainText("ditambahkan", { useInnerText: true });
     await cartButton(page).click();
-    await expect(toast(page)).toHaveText("");
+    await expect(toast(page)).toHaveText("", { useInnerText: true });
   });
 });
 
@@ -235,6 +242,19 @@ test("cart bar: only at 360 px and only with items, opens the sheet (K6)", async
   await expect(bar(page)).toHaveAccessibleName("Lihat keranjang · 2 item Rp35.000+");
   await bar(page).click();
   await expect(sheet(page)).toBeVisible();
+});
+
+test("cart bar chip: priced only, then nothing priced (approved #4, TR-M1.5-02)", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile-360", "the bar shows at ≤ 640 px only");
+  await open(page);
+  await addFromCard(page, "Hampers Natal", 1);
+  await expect(bar(page)).toHaveAccessibleName("Lihat keranjang · 1 item Rp35.000");
+  const s = await openSheet(page);
+  await s.getByRole("button", { name: "Hapus Hampers Natal" }).click();
+  await page.keyboard.press("Escape");
+  await expect(sheet(page)).toBeHidden();
+  await addFromCard(page, "Soft Cookies", 1);
+  await expect(bar(page)).toHaveAccessibleName("Lihat keranjang · 1 item Harga via WA");
 });
 
 test("the empty sheet and Lihat menu (K7)", async ({ page }) => {

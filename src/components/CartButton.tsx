@@ -3,12 +3,16 @@
 import { useStore } from "./StoreProvider";
 import styles from "./CartButton.module.css";
 
+/** The toast's "Lihat keranjang" focuses this button before opening the sheet, so focus has a place to return to. */
+export const CART_BUTTON_ID = "cart-button";
+
 // design.md §6 Navigation: round icon button with the bag glyph and a count badge hidden at 0 (D10 name).
 export default function CartButton() {
   const { lines, openCart } = useStore();
   const count = lines.reduce((sum, l) => sum + l.qty, 0);
   return (
     <button
+      id={CART_BUTTON_ID}
       type="button"
       className={styles.button}
       aria-label={count ? `Buka keranjang, ${count} item` : "Buka keranjang"}

@@ -30,9 +30,16 @@
   pointer-events: auto;
 }
 
-/* Empty while hidden, so it takes no visible room and has nothing to focus. */
-.toast:empty {
-  padding: 0;
+/* The last toast stays rendered so the pill fades out; once faded its content is hidden, so nothing stale can be
+   focused or read (TR-M1.5-01). With reduced motion there is no transition and it hides at once. */
+.toast > * {
+  visibility: hidden;
+  transition: visibility 0s 0.25s;
+}
+
+.toast.show > * {
+  visibility: visible;
+  transition-delay: 0s;
 }
 
 .action {
@@ -47,7 +54,9 @@
   font: inherit;
   font-size: 13px;
   cursor: pointer;
-  transition: scale 0.1s ease-out;
+  transition:
+    scale 0.1s ease-out,
+    visibility 0s 0.25s;
 }
 
 /* 44px hit area. */

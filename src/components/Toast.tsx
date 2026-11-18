@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CART_BUTTON_ID } from "./CartButton";
 import { useStore } from "./StoreProvider";
 import styles from "./Toast.module.css";
 
@@ -10,7 +11,11 @@ export default function Toast() {
   const { toast, hideToast, openCart } = useStore();
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  // Clearing the toast unmounts its button while focused or hovered, and React then never runs onBlur/onPointerLeave,
+  // The last toast stays rendered after a hide, so the pill fades out; the CSS hides it once faded (TR-M1.5-01).
+  const [last, setLast] = useState(toast);
+  if (toast && toast !== last) setLast(toast);
+  const shown = toast ?? last;
+  // Clearing the toast hides its button while focused or hovered, and React then never runs onBlur/onPointerLeave,
   // so the flags are reset here or the next toast would never hide (BSA-M1.5-01).
   if (!toast && (hovered || focused)) {
     setHovered(false);
@@ -33,10 +38,19 @@ export default function Toast() {
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
     >
-      {toast && (
+      {shown && (
         <>
-          <span>{toast.text}</span>
-          <button type="button" className={styles.action} onClick={openCart}>
+          {/* A new node per toast, so the status region announces a repeated text too. */}
+          <span key={shown.key}>{shown.text}</span>
+          <button
+            type="button"
+            className={styles.action}
+            onClick={() => {
+              // This button hides, so the sheet would have no control to return focus to (TR-M1.5-03).
+              document.getElementById(CART_BUTTON_ID)?.focus();
+              openCart();
+            }}
+          >
             Lihat keranjang
           </button>
         </>

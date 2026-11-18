@@ -357,6 +357,8 @@ Native `<dialog>` with `showModal()`, backdrop as in 4. Desktop: 2 columns.
 
 Right-side `<dialog>` (full width on mobile) with three steps sharing one header (title + mini step indicator "1 Keranjang → 2 Data pemesan", current step in `--ink`/600).
 
+The cart is kept in `localStorage['kagumi-cart']` as `[{"id","qty"}]` only; names and prices come from the page. On load: invalid JSON or a non-array gives an empty cart, ids not on the page are dropped, duplicates are summed, `qty` is truncated and clamped to 1–50, and more than 20 lines are cut to the first 20. A 21st product is refused (see Toast).
+
 1. **Keranjang:** lines = 64px thumb (`r-md`) · name + unit price + type · "Hapus" text button · line total + 34px stepper. Footer: subtotal (head 20px/600, priced lines only), note ("+ n produk tanpa harga, dikonfirmasi lewat WhatsApp" or the delivery-fee note), full-width Primary "Lanjut isi data →".
    - **Empty:** 64px butter burst, "Keranjang masih kosong", hint, Line "Lihat menu".
    - **Line no longer orderable** (the server rejected the checkout): an error alert at the top of the sheet (`--error-bg` / `--error`, "Ada produk yang sudah tidak bisa dipesan. Hapus dulu untuk melanjutkan."). The affected line shows its thumb at 50% opacity and, in place of the stepper, the reason in 12px/500 `--error` ("Order sudah ditutup" or "Produk tidak tersedia"). "Lanjut isi data" is disabled until those lines are removed.
@@ -368,6 +370,10 @@ Right-side `<dialog>` (full width on mobile) with three steps sharing one header
 ### Toast
 
 Bottom-center pill, `--strong` / `--on-strong`, message + butter "Lihat keranjang" button. Shows on add-to-cart and auto-hides after 2.6s; the timer pauses while the toast is hovered or focused. `role="status"`. Hidden whenever a dialog opens.
+
+- **Added:** "{name} ditambahkan". "Tambah ke keranjang" in the product detail closes the dialog, so the toast is visible.
+- **At 50:** adding to a line already at 50 changes nothing and shows no toast.
+- **Cart full:** a 21st product is refused with "Keranjang maksimal 20 produk", the same pill with its "Lihat keranjang" button; the cart is unchanged.
 
 ### Mobile cart bar (≤ 640px)
 

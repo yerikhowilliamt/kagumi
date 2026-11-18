@@ -8,7 +8,7 @@ Every command in this guide was run during M0 or is a script in `package.json`. 
 
 Kagumi Dough is the website of a homemade bakery in Surakarta (Solo): a storefront with a cart that sends one prefilled WhatsApp order, and an admin dashboard for products and media, orders and statistics.
 
-M0 built the foundation: design tokens and the theme toggle, the full database schema with one migration, and a development seed. M1 builds the storefront on it. So far that is the shared order rules in `src/lib`, a statically rendered home page with the navigation, hero, product-name marquee, how-to-order steps, CTA band and footer, the menu with filter chips and product cards, and the product detail dialog. The cart and checkout follow in the later M1 tasks.
+M0 built the foundation: design tokens and the theme toggle, the full database schema with one migration, and a development seed. M1 builds the storefront on it. So far that is the shared order rules in `src/lib`, a statically rendered home page with the navigation, hero, product-name marquee, how-to-order steps, CTA band and footer, the menu with filter chips and product cards, the product detail dialog, and the cart (sheet, toast, mobile cart bar and nav cart button, kept in `localStorage`). Checkout follows in the later M1 tasks.
 
 **Stack**
 
@@ -94,7 +94,7 @@ Every script in `package.json`:
 | `npm run typecheck` | `next typegen && tsc --noEmit` | Generates Next.js route types, then type-checks |
 | `npm test` | `vitest run` | All Vitest tests, **including `tests/db`**, which connect to the development branch and write inside transactions that are always rolled back |
 | `npm run test:unit` | `vitest run --exclude 'tests/db/**'` | Vitest tests that need no database |
-| `npm run test:e2e` | `playwright test` | Playwright tests in `e2e/` at 360 px and desktop width. Starts `npm run dev` itself unless `PLAYWRIGHT_BASE_URL` is set. The home page reads its products from the development branch (cached by the dev server, §2), and `e2e/storefront.spec.ts` and `e2e/menu.spec.ts` expect the products of the seed in `sortOrder`, and `e2e/detail.spec.ts` its names, prices and descriptions |
+| `npm run test:e2e` | `playwright test` | Playwright tests in `e2e/` at 360 px and desktop width. Starts `npm run dev` itself unless `PLAYWRIGHT_BASE_URL` is set. The home page reads its products from the development branch (cached by the dev server, §2), and `e2e/storefront.spec.ts` and `e2e/menu.spec.ts` expect the products of the seed in `sortOrder`, and `e2e/detail.spec.ts` its names, prices and descriptions, and `e2e/cart.spec.ts` Hampers Natal as a pre-order at Rp35.000 with the deadline 2026-12-10 and Soft Cookies as ready stock without a price |
 | `npm run vercel-build` | `prisma migrate deploy && next build` | **Run by Vercel only**, instead of `build`. Applies pending migrations to the branch of that Vercel environment, then builds. Never run it locally |
 | `postinstall` | `prisma generate` | Runs automatically after `npm ci`; regenerates the Prisma client |
 
@@ -201,6 +201,7 @@ src/
     order.ts         Order number, rupiah, WIB dates, the WhatsApp message and URL, the cart limits (no imports)
     validation.ts    Checkout schema and phone normalization (zod)
     menu.ts          Storefront product types, the row mapper and the menu rules: sort, filter, open pre-order, promo product (imports only ./order)
+    cart.ts          The cart in localStorage['kagumi-cart']: load rules, add, set, remove (imports only ./order and a type from ./menu)
   styles/tokens.css  Every design token, light and dark, and the global base rules
   generated/prisma/  Generated Prisma client (git-ignored, written by prisma generate)
 prisma/
