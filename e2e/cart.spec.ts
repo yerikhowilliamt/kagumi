@@ -184,6 +184,29 @@ test.describe("toast (K5)", () => {
     await expect(toast(page)).toContainText("ditambahkan");
   });
 
+  // BSA-M1.5-01: the button unmounts while focused or hovered, so its blur and pointerleave never reach the toast.
+  for (const how of ["keyboard", "click"]) {
+    test(`a later toast still hides after its button was used (${how})`, async ({ page }) => {
+      await withClock(page);
+      await addFromCard(page, "Hampers Natal", 1);
+      const action = toast(page).getByRole("button", { name: "Lihat keranjang" });
+      if (how === "keyboard") {
+        await action.focus();
+        await page.keyboard.press("Enter");
+      } else {
+        await action.click();
+      }
+      await expect(sheet(page)).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(sheet(page)).toBeHidden();
+
+      await addButton(page, "Soft Cookies").click();
+      await expect(toast(page)).toContainText("Soft Cookies ditambahkan");
+      await page.clock.runFor(2700);
+      await expect(toast(page)).toHaveText("");
+    });
+  }
+
   test("hides when a dialog opens", async ({ page }) => {
     await withClock(page);
     await addFromCard(page, "Hampers Natal", 1);
@@ -257,6 +280,28 @@ test("a closed product can't be added from its card or its detail (K10)", async 
   await expect(detail.getByText("Order sudah ditutup")).toBeVisible();
   await expect(detail.getByRole("button", { name: "Tambah ke keranjang" })).toHaveCount(0);
   await expect(cartButton(page)).toHaveAccessibleName("Buka keranjang");
+});
+
+test("a closed product already in the cart can't be added from its card (K10, BSA-M1.5-06)", async ({ page }) => {
+  await open(page);
+  await addFromCard(page, "Hampers Natal", 1);
+  await page.clock.setFixedTime(new Date(CLOSED));
+  await page.reload();
+  await expect(cartButton(page)).toHaveAccessibleName("Buka keranjang, 1 item");
+  await expect(card(page, "Hampers Natal").getByText("Order sudah ditutup")).toBeVisible();
+  await expect(addButton(page, "Hampers Natal")).toHaveCount(0);
+});
+
+test("at 700 px the sheet is full width (design.md §4 ≤ 760px, BSA-M1.5-03)", async ({ page }, info) => {
+  test.skip(info.project.name !== "desktop", "one viewport change is enough");
+  await page.setViewportSize({ width: 700, height: 800 });
+  await open(page);
+  await addFromCard(page, "Hampers Natal", 1);
+  const s = await openSheet(page);
+  await s.evaluate((el) => Promise.allSettled(el.getAnimations().map((a) => a.finished)));
+  const box = (await s.boundingBox())!;
+  expect(box.x).toBe(0);
+  expect(box.width).toBe(700);
 });
 
 for (const theme of ["light", "dark"]) {

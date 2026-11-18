@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-import { addLine, CART_KEY, parseCart, removeLine, serializeCart, setQty, type CartLine } from "@/lib/cart";
+import { addOutcome, CART_KEY, parseCart, removeLine, serializeCart, setQty, type CartLine } from "@/lib/cart";
 import type { StoreProduct } from "@/lib/menu";
 import { jakartaToday } from "@/lib/order";
 
@@ -108,13 +108,9 @@ export default function StoreProvider({
     },
     closeCart: () => setCartOpen(false),
     addToCart: (id, qty) => {
-      const next = addLine(lines, id, qty);
-      if (next === "full") return showToast("Keranjang maksimal 20 produk");
-      const before = lines.find((l) => l.id === id)?.qty;
-      // Already at 50: nothing was added, so no "ditambahkan".
-      if (before === next.find((l) => l.id === id)?.qty) return;
-      save(next);
-      showToast(`${products.find((p) => p.id === id)?.name} ditambahkan`);
+      const result = addOutcome(lines, id, qty, products.find((p) => p.id === id)?.name ?? "");
+      if (result.lines) save(result.lines);
+      if (result.toast) showToast(result.toast);
     },
     setLineQty: (id, qty) => save(setQty(lines, id, qty)),
     removeFromCart: (id) => save(removeLine(lines, id)),

@@ -122,6 +122,11 @@
 }
 
 @media (max-width: 760px) {
+  /* design.md §4 Breakpoints: the cart sheet is full width (BSA-M1.5-03). */
+  .side {
+    width: 100%;
+  }
+
   /* Bottom sheet: rises from the bottom, 92dvh at most (vh would ignore expanded mobile toolbars), top corners 24px. */
   .modal {
     width: 100%;

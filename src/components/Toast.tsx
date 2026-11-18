@@ -10,6 +10,12 @@ export default function Toast() {
   const { toast, hideToast, openCart } = useStore();
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  // Clearing the toast unmounts its button while focused or hovered, and React then never runs onBlur/onPointerLeave,
+  // so the flags are reset here or the next toast would never hide (BSA-M1.5-01).
+  if (!toast && (hovered || focused)) {
+    setHovered(false);
+    setFocused(false);
+  }
   const paused = hovered || focused;
 
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addLine, parseCart, removeLine, serializeCart, setQty, type CartLine } from "@/lib/cart";
+import { addLine, addOutcome, parseCart, removeLine, serializeCart, setQty, type CartLine } from "@/lib/cart";
 
 // D21 load rules and FR8–FR9 (task file § M1.5, K8).
 const ids = Array.from({ length: 25 }, (_, i) => `p${i}`);
@@ -52,6 +52,11 @@ describe("parseCart", () => {
     expect(parseCart(raw([{ id: "p1", qty: 40 }, { id: "p1", qty: 40 }]), known)).toEqual([{ id: "p1", qty: 50 }]);
   });
 
+  it("sums duplicates before truncating and clamping (approved #1, BSA-M1.5-02)", () => {
+    expect(parseCart(raw([{ id: "p1", qty: 2.5 }, { id: "p1", qty: 2.5 }]), known)).toEqual([{ id: "p1", qty: 5 }]);
+    expect(parseCart(raw([{ id: "p1", qty: -10 }, { id: "p1", qty: 5 }]), known)).toEqual([{ id: "p1", qty: 1 }]);
+  });
+
   it("cuts more than 20 lines to the first 20 known ones", () => {
     const lines = parseCart(raw([{ id: "gone", qty: 1 }, ...ids.map((id) => ({ id, qty: 1 }))]), known);
     expect(lines).toHaveLength(20);
@@ -89,6 +94,25 @@ describe("addLine", () => {
     const lines = [{ id: "p1", qty: 1 }];
     addLine(lines, "p1", 1);
     expect(lines).toEqual([{ id: "p1", qty: 1 }]);
+  });
+});
+
+// BSA-M1.5-04, -05: the provider's add, as a pure function (a 21st product can't be reached with the 7 seed products in e2e).
+describe("addOutcome", () => {
+  it('saves the new lines and toasts "{name} ditambahkan"', () => {
+    expect(addOutcome([{ id: "p1", qty: 45 }], "p1", 10, "Bolu")).toEqual({
+      lines: [{ id: "p1", qty: 50 }],
+      toast: "Bolu ditambahkan",
+    });
+  });
+
+  it("changes nothing and shows no toast for a line already at 50 (approved #2)", () => {
+    expect(addOutcome([{ id: "p1", qty: 50 }], "p1", 1, "Bolu")).toEqual({});
+  });
+
+  it("keeps the cart and shows the limit toast for a 21st product (D21, approved #3)", () => {
+    const twenty = ids.slice(0, 20).map((id) => ({ id, qty: 1 }));
+    expect(addOutcome(twenty, "p20", 1, "Bolu")).toEqual({ toast: "Keranjang maksimal 20 produk" });
   });
 });
 

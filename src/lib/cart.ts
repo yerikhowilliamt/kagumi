@@ -22,9 +22,10 @@ export function parseCart(raw: string | null, knownIds: ReadonlySet<string>): Ca
     if (typeof item !== "object" || item === null) continue;
     const { id, qty } = item as Record<string, unknown>;
     if (typeof id !== "string" || !knownIds.has(id) || typeof qty !== "number" || !Number.isFinite(qty)) continue;
-    merged.set(id, clamp((merged.get(id) ?? 0) + clamp(qty)));
+    // Approved #1: duplicates are summed first, then truncated and clamped once.
+    merged.set(id, (merged.get(id) ?? 0) + qty);
   }
-  return [...merged].slice(0, MAX_LINES).map(([id, qty]) => ({ id, qty }));
+  return [...merged].slice(0, MAX_LINES).map(([id, qty]) => ({ id, qty: clamp(qty) }));
 }
 
 /** Adds `qty` of a product, capped at 50. A new product beyond 20 lines gives "full". */
@@ -32,6 +33,17 @@ export function addLine(lines: CartLine[], id: string, qty: number): CartLine[] 
   if (lines.some((l) => l.id === id)) return lines.map((l) => (l.id === id ? { id, qty: clamp(l.qty + qty) } : l));
   if (lines.length >= MAX_LINES) return "full";
   return [...lines, { id, qty: clamp(qty) }];
+}
+
+/**
+ * What an add does: the lines to save (none when nothing changes) and the toast text (none for a line already at 50, #2).
+ * A 21st product keeps the cart and shows the limit toast (D21, #3).
+ */
+export function addOutcome(lines: CartLine[], id: string, qty: number, name: string): { lines?: CartLine[]; toast?: string } {
+  const next = addLine(lines, id, qty);
+  if (next === "full") return { toast: "Keranjang maksimal 20 produk" };
+  if (lines.find((l) => l.id === id)?.qty === next.find((l) => l.id === id)?.qty) return {};
+  return { lines: next, toast: `${name} ditambahkan` };
 }
 
 /** 0 or less removes the line (the cart stepper's minimum). */
