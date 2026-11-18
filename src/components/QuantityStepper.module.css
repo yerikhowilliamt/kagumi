@@ -1,0 +1,67 @@
+/* design.md §5 Quantity stepper */
+.stepper {
+  box-sizing: border-box;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+}
+
+.sm {
+  height: 34px;
+}
+
+.lg {
+  height: 46px;
+}
+
+.button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-full);
+  background: none;
+  color: var(--ink);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.lg .button {
+  width: 44px;
+  height: 44px;
+}
+
+/* 32px box, 44px hit area. */
+.sm .button::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+.button:hover {
+  background: var(--bg);
+}
+
+.button[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.button[aria-disabled="true"]:hover {
+  background: none;
+}
+
+.count {
+  min-width: 22px;
+  font-family: var(--head);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}

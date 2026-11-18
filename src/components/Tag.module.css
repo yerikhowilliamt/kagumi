@@ -20,3 +20,14 @@
   background: var(--tag-bg);
   color: var(--success);
 }
+
+/* Product detail (design.md §5: the admin/detail rows). */
+.detail.po {
+  background: var(--butter);
+  color: var(--on-accent);
+}
+
+.detail.ready {
+  background: var(--success-bg);
+  color: var(--success);
+}

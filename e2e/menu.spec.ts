@@ -124,8 +124,11 @@ test("after its deadline a product is closed: text, 50% thumbnail, last card, no
   const closed = card(page, "Hampers Natal");
   await expect(closed.getByText("Order sudah ditutup", { exact: true })).toBeVisible();
   await expect(thumb(page, "Hampers Natal")).toHaveCSS("opacity", "0.5");
-  // The thumbnail is the only button left: the closed note is text.
-  await expect(closed.getByRole("button")).toHaveCount(1);
+  // Only the two detail openers are left (thumbnail and name, M1.4): the closed note is text.
+  const buttons = closed.getByRole("button");
+  await expect(buttons).toHaveCount(2);
+  await expect(buttons.nth(0)).toHaveAccessibleName("Lihat detail Hampers Natal");
+  await expect(buttons.nth(1)).toHaveAccessibleName("Hampers Natal");
   await expect(closed.getByText("+ Tambah ke keranjang")).toHaveCount(0);
 
   const open = card(page, "Bolu Gulung");

@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { StoreProduct } from "@/lib/menu";
 import { jakartaToday } from "@/lib/order";
 
@@ -9,6 +9,11 @@ type Store = {
   products: StoreProduct[];
   /** The WIB date as `YYYY-MM-DD`. */
   today: string;
+  /** The product in the detail dialog. It stays set after closing, so the dialog keeps its content while it fades out. */
+  selected: StoreProduct | null;
+  detailOpen: boolean;
+  openDetail: (id: string) => void;
+  closeDetail: () => void;
 };
 
 const StoreContext = createContext<Store | null>(null);
@@ -40,5 +45,18 @@ export default function StoreProvider({
 }) {
   // D22: hydration renders with the server's date, so the markup matches; the browser's WIB date takes over right after.
   const browserToday = useSyncExternalStore(subscribe, jakartaToday, () => today);
-  return <StoreContext value={{ products, today: browserToday }}>{children}</StoreContext>;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const store: Store = {
+    products,
+    today: browserToday,
+    selected: products.find((p) => p.id === selectedId) ?? null,
+    detailOpen,
+    openDetail: (id) => {
+      setSelectedId(id);
+      setDetailOpen(true);
+    },
+    closeDetail: () => setDetailOpen(false),
+  };
+  return <StoreContext value={store}>{children}</StoreContext>;
 }

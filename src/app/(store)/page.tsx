@@ -3,6 +3,7 @@ import Image from "next/image";
 import Button from "@/components/Button";
 import Menu from "@/components/Menu";
 import OpenPreOrderNotice from "@/components/OpenPreOrderNotice";
+import ProductDetail from "@/components/ProductDetail";
 import PromoCard from "@/components/PromoCard";
 import StoreProvider from "@/components/StoreProvider";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -266,6 +267,7 @@ export default async function Home() {
           </div>
         </footer>
       </div>
+      <ProductDetail />
     </StoreProvider>
   );
 }

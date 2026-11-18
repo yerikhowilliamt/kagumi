@@ -1,0 +1,104 @@
+/* design.md §6 Product detail (dialog): gallery and info side by side, one column at ≤ 760px. */
+.gallery {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 16px;
+}
+
+.main {
+  display: grid;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: 20px;
+}
+
+.info {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 32px 32px 28px;
+}
+
+.title {
+  margin: 16px 0 8px;
+  padding-right: 48px;
+  font-family: var(--head);
+  font-size: clamp(30px, 3.4vw, 40px);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.price {
+  margin: 0;
+  font-family: var(--head);
+  font-size: 20px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.ask {
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.desc {
+  margin: 16px 0 0;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.deadline {
+  margin: 10px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--warning);
+}
+
+.facts {
+  display: grid;
+  gap: 8px;
+  align-self: stretch;
+  margin: 22px 0 0;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+  font-size: 14px;
+}
+
+.factLabel {
+  color: var(--muted);
+}
+
+.buy {
+  display: flex;
+  gap: 12px;
+  align-self: stretch;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 28px;
+}
+
+.closed {
+  margin: 0;
+  font-family: var(--head);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .info {
+    padding: 8px 20px 24px;
+  }
+
+  /* The buy row stays at the bottom of the sheet while the sheet scrolls. */
+  .buy {
+    position: sticky;
+    bottom: 0;
+    padding: 16px 0 calc(8px + env(safe-area-inset-bottom));
+    background: var(--surface);
+  }
+}

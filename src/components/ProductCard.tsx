@@ -1,11 +1,15 @@
+"use client";
+
 import type { StoreProduct } from "@/lib/menu";
 import { formatDateShort, formatRupiah } from "@/lib/order";
 import ProductThumb from "./ProductThumb";
+import { useStore } from "./StoreProvider";
 import Tag from "./Tag";
 import styles from "./ProductCard.module.css";
 
-// design.md §6 Product card. The thumbnail opens the detail in M1.4; the add button adds to the cart in M1.5.
+// design.md §6 Product card. The thumbnail and the name open the detail; the add button adds to the cart in M1.5.
 export default function ProductCard({ product, closed }: { product: StoreProduct; closed: boolean }) {
+  const { openDetail } = useStore();
   return (
     <li className={styles.item}>
       <div className={styles.media}>
@@ -13,6 +17,7 @@ export default function ProductCard({ product, closed }: { product: StoreProduct
           type="button"
           className={closed ? `${styles.thumb} ${styles.closed}` : styles.thumb}
           aria-label={`Lihat detail ${product.name}`}
+          onClick={() => openDetail(product.id)}
         >
           <ProductThumb product={product} />
         </button>
@@ -23,7 +28,11 @@ export default function ProductCard({ product, closed }: { product: StoreProduct
       </div>
       <p className={styles.category}>{product.category}</p>
       <div className={styles.meta}>
-        <h3 className={styles.name}>{product.name}</h3>
+        <h3 className={styles.name}>
+          <button type="button" className={styles.nameButton} onClick={() => openDetail(product.id)}>
+            {product.name}
+          </button>
+        </h3>
         {product.price === null ? (
           <p className={`${styles.price} ${styles.ask}`}>Harga via WA</p>
         ) : (

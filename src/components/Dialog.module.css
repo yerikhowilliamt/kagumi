@@ -1,0 +1,158 @@
+/* design.md §4 Motion (pop, sheet), §4 Shadow (backdrop), §6 Product detail and Cart sheet.
+   Enter and exit are one transition run both ways (@starting-style + allow-discrete), so closing retraces the
+   opening path and reverses mid-flight. Own position and z-index: only Chromium keeps a closing dialog in the
+   top layer (`overlay`). Reduced motion turns every transition off in tokens.css. */
+.dialog {
+  position: fixed;
+  inset-block: 0;
+  z-index: 50;
+  max-width: none;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  background: var(--surface);
+  color: var(--ink);
+  transition:
+    translate 0.35s var(--ease),
+    scale 0.3s var(--ease),
+    opacity 0.3s var(--ease),
+    display 0.35s allow-discrete,
+    overlay 0.35s allow-discrete;
+}
+
+.dialog::backdrop {
+  background: var(--backdrop);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  transition:
+    opacity 0.3s,
+    display 0.3s allow-discrete,
+    overlay 0.3s allow-discrete;
+}
+
+.dialog[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  .dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+/* 38px circle, 44px+ hit area. */
+.close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    scale 0.1s ease-out;
+}
+
+.close::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+.close:hover {
+  border-color: var(--ink);
+}
+
+.close:active {
+  scale: 0.97;
+}
+
+/* Centered, two columns, pop: fade and scale from .97. */
+.modal {
+  width: min(960px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  grid-template-columns: 1.05fr 1fr;
+  border-radius: 28px;
+  opacity: 0;
+  scale: 0.97;
+}
+
+.modal[open] {
+  display: grid;
+  opacity: 1;
+  scale: 1;
+}
+
+@starting-style {
+  .modal[open] {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+
+/* Right-side panel that slides in (cart, M1.5). */
+.side {
+  inset: 0 0 0 auto;
+  width: min(460px, 100%);
+  height: 100%;
+  margin: 0;
+  flex-direction: column;
+  translate: 100% 0;
+}
+
+.side[open] {
+  display: flex;
+  translate: none;
+}
+
+@starting-style {
+  .side[open] {
+    translate: 100% 0;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Bottom sheet: rises from the bottom, 92vh at most, top corners 24px. */
+  .modal {
+    width: 100%;
+    max-height: 92vh;
+    margin: auto 0 0;
+    border-radius: 24px 24px 0 0;
+    opacity: 1;
+    scale: none;
+    translate: 0 100%;
+  }
+
+  .modal[open] {
+    display: block;
+    scale: none;
+    translate: none;
+  }
+
+  @starting-style {
+    .modal[open] {
+      opacity: 1;
+      scale: none;
+      translate: 0 100%;
+    }
+  }
+
+  /* Sticky, not fixed: it rides with the sheet and stays put while the sheet scrolls. The negative margin
+     takes it out of the layout height. */
+  .modal > .close {
+    position: sticky;
+    top: 16px;
+    right: auto;
+    margin: 16px 16px -54px auto;
+  }
+}

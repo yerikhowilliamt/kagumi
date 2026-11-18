@@ -28,7 +28,7 @@ const render = async () => renderToStaticMarkup(await Home());
 const between = (html: string, from: string, to: string) => html.slice(html.indexOf(from), html.indexOf(to));
 const marqueeOf = (html: string) => between(html, 'data-testid="marquee"', 'id="menu"');
 const menuOf = (html: string) => between(html, 'id="menu"', 'id="cara-pesan"');
-const cardNames = (html: string) => [...menuOf(html).matchAll(/<h3[^>]*>([^<]+)<\/h3>/g)].map((m) => m[1]);
+const cardNames = (html: string) => [...menuOf(html).matchAll(/<h3[^>]*>(?:<button[^>]*>)?([^<]+)/g)].map((m) => m[1]);
 
 describe("storefront page", () => {
   beforeEach(() => findMany.mockReset().mockResolvedValue(ROWS));
