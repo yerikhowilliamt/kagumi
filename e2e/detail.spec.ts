@@ -27,6 +27,15 @@ async function openDetail(page: Page, trigger: Locator, name: string, time = OPE
   return detail(page, name);
 }
 
+// Reads the dialog's `open` state through a handle, because the role locator stops matching once it closes. `open`
+// drops on close() at once, while visibility lasts through the 0.35 s exit transition. Waits for the opening
+// transition first, so pointer coordinates taken afterwards stay valid.
+async function openState(dialog: Locator) {
+  const handle = (await dialog.elementHandle())!;
+  await handle.evaluate((el) => Promise.allSettled(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+  return () => handle.evaluate((el) => (el as HTMLDialogElement).open);
+}
+
 const token = (page: Page, name: string, property: "color" | "backgroundColor") =>
   page.evaluate(
     ([n, p]) => {
@@ -113,6 +122,25 @@ test("the stepper does nothing below 1 and stops at 50 (K2)", async ({ page }) =
   await expect(count(dialog)).toHaveText("49");
 });
 
+test("the stepper restarts at 1 on every opening, same or other product (D6)", async ({ page }) => {
+  const dialog = await openDetail(page, thumb(page, "Hampers Natal"), "Hampers Natal");
+  const plus = dialog.getByRole("button", { name: "Tambah Hampers Natal", exact: true });
+  for (let i = 0; i < 4; i++) await plus.click();
+  await expect(count(dialog)).toHaveText("5");
+  await dialog.getByRole("button", { name: "Tutup", exact: true }).click();
+  await expect(dialog).toBeHidden();
+
+  await thumb(page, "Hampers Natal").click();
+  await expect(count(dialog)).toHaveText("1");
+  await plus.click();
+  await expect(count(dialog)).toHaveText("2");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  await nameButton(page, "Buko Mangga").click();
+  await expect(count(detail(page, "Buko Mangga"))).toHaveText("1");
+});
+
 test("a closed product shows the closed note and no stepper or add button (K2)", async ({ page }) => {
   const dialog = await openDetail(page, thumb(page, "Hampers Natal"), "Hampers Natal", CLOSED);
   await expect(dialog.getByText("Order sudah ditutup", { exact: true })).toBeVisible();
@@ -148,8 +176,25 @@ test.describe("closes and returns focus to the control that opened it (K3)", () 
 
   test("a click inside the dialog does not close it", async ({ page }) => {
     const dialog = await openDetail(page, thumb(page, "Hampers Natal"), "Hampers Natal");
+    const isOpen = await openState(dialog);
     await dialog.getByRole("heading", { level: 2 }).click();
-    await expect(dialog).toBeVisible();
+    expect(await isOpen()).toBe(true);
+    // A non-interactive point just inside the dialog's left edge.
+    const box = (await dialog.boundingBox())!;
+    await page.mouse.click(box.x + 6, box.y + box.height / 2);
+    expect(await isOpen()).toBe(true);
+  });
+
+  test("a drag that starts inside and ends on the backdrop does not close it", async ({ page }) => {
+    const dialog = await openDetail(page, thumb(page, "Hampers Natal"), "Hampers Natal");
+    const isOpen = await openState(dialog);
+    // Selecting the description and releasing over the backdrop: the click then targets the dialog itself.
+    const text = (await dialog.getByText("Termasuk box, paper bag, kartu & hang tag edisi Natal.").boundingBox())!;
+    await page.mouse.move(text.x + 4, text.y + text.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(10, 10, { steps: 5 });
+    await page.mouse.up();
+    expect(await isOpen()).toBe(true);
   });
 });
 

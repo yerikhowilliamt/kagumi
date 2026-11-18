@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
 import styles from "./Dialog.module.css";
+
+const outside = (e: MouseEvent<HTMLDialogElement>) => {
+  const r = e.currentTarget.getBoundingClientRect();
+  return e.clientX < r.left || e.clientX >= r.right || e.clientY < r.top || e.clientY >= r.bottom;
+};
 
 // design.md §6 and §8: a native <dialog> opened with showModal(), so the browser traps focus, makes the page inert,
 // closes on Esc and puts focus back on the control that opened it. ✕ and a backdrop click close it too.
@@ -22,6 +27,7 @@ export default function Dialog({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const pressedOutside = useRef(false);
 
   useEffect(() => {
     const dialog = ref.current!;
@@ -35,8 +41,10 @@ export default function Dialog({
       className={`${styles.dialog} ${styles[variant]}`}
       aria-labelledby={labelledBy}
       onClose={onClose}
-      // The dialog's own box is covered by its content, so a click whose target is the dialog hit the backdrop.
-      onClick={(e) => e.target === e.currentTarget && e.currentTarget.close()}
+      // A backdrop click is pressed and released outside the dialog's box. A drag that starts inside, or a click on
+      // panel space the content leaves uncovered (`side`), also targets the dialog, so the target alone is not enough.
+      onPointerDown={(e) => (pressedOutside.current = outside(e))}
+      onClick={(e) => e.target === e.currentTarget && pressedOutside.current && outside(e) && e.currentTarget.close()}
     >
       <button type="button" className={styles.close} aria-label="Tutup" onClick={() => ref.current!.close()}>
         <span aria-hidden="true">✕</span>
