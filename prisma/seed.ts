@@ -1,5 +1,6 @@
-// Development seed (P15). Run only with `npx prisma db seed` against the development branch.
-// Inserts the menu only when `products` is empty, so running it again changes nothing.
+// Development seed (P15, changed by D7). Run only with `npx prisma db seed` against the development branch.
+// Inserts each listed product whose name is not in `products` yet and leaves existing rows untouched,
+// so running it again changes nothing.
 import type { Prisma } from "../src/generated/prisma/client.ts";
 
 const products = [
@@ -17,6 +18,16 @@ const products = [
     price: 35000,
     orderDeadline: new Date("2026-12-10"),
   },
+  // D7 fixtures for the checkout tests: a pre-order that is always closed, and an open priced product.
+  {
+    name: "Nastar",
+    category: "Kue Kering",
+    type: "PRE_ORDER",
+    description: "Produk contoh untuk pengembangan, PO sudah ditutup.",
+    price: 90000,
+    orderDeadline: new Date("2026-11-01"),
+  },
+  { name: "Kastengel", category: "Kue Kering", type: "READY_STOCK", description: "Produk contoh untuk pengembangan.", price: 85000 },
 ] as const;
 
 /**
@@ -30,12 +41,12 @@ export function assertDevelopmentDatabase(env: Record<string, string | undefined
   }
 }
 
-/** Inserts the P15 menu when `products` is empty; returns the number of rows inserted. */
+/** Inserts each listed product whose name is missing; returns the number of rows inserted. */
 export async function seedProducts(client: Prisma.TransactionClient) {
-  if ((await client.product.count()) > 0) return 0;
-  const { count } = await client.product.createMany({
-    data: products.map((p, i) => ({ ...p, sortOrder: i + 1 })),
-  });
+  const existing = new Set((await client.product.findMany({ select: { name: true } })).map((p) => p.name));
+  const missing = products.map((p, i) => ({ ...p, sortOrder: i + 1 })).filter((p) => !existing.has(p.name));
+  if (missing.length === 0) return 0;
+  const { count } = await client.product.createMany({ data: missing });
   return count;
 }
 
@@ -48,7 +59,7 @@ if (import.meta.main) {
   const { db } = await import("../src/lib/db.ts");
   try {
     const inserted = await seedProducts(db);
-    console.log(inserted ? `inserted ${inserted} products` : `products already has ${await db.product.count()} rows; nothing inserted`);
+    console.log(`inserted ${inserted} products; products has ${await db.product.count()} rows`);
   } finally {
     await db.$disconnect();
   }

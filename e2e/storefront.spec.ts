@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const WHATSAPP = "https://wa.me/6285159545168";
-// The development seed (P15), in sortOrder.
+// The development seed (P15 plus the D7 fixtures), in sortOrder.
 const SEED_NAMES = [
   "Bolu Gulung",
   "Fudgy Brownies",
@@ -10,6 +10,8 @@ const SEED_NAMES = [
   "Buko Mangga",
   "Donut",
   "Hampers Natal",
+  "Nastar",
+  "Kastengel",
 ];
 
 test.beforeEach(async ({ page }) => {

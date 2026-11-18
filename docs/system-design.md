@@ -86,9 +86,12 @@ src/
     db.ts                       Prisma client (Neon adapter)
     auth.ts                     hashing, sessions, lockout, requireAdmin()
     cloudinary.ts               sign upload, verify response, destroy, delivery URLs
-    tracking.ts                 visitor hash, bot filter, rate limit
+    tracking.ts                 visitor hash, bot filter, rate limit (server only)
+    checkout.ts                 the checkout transaction behind createOrder (server only)
     order.ts                    order number, WhatsApp message builder
     validation.ts               Zod schemas shared by client and server
+    menu.ts                     storefront product types and the closed/sort rules (client-safe)
+    cart.ts                     cart parsing and line rules (client-safe)
   styles/tokens.css             all design tokens (light + dark)
 prisma/schema.prisma, prisma/migrations/
 scripts/create-admin.ts         create/reset the admin account from env vars
@@ -137,12 +140,27 @@ tests/ (Vitest)  e2e/ (Playwright)
    | Empty line | After the last line |
    | Subtotal | All priced: `Subtotal: Rp70.000`. Some unpriced: `Subtotal: Rp70.000 (+ n produk harga via WA)`. None priced: `Subtotal: harga via WA` |
    | Customer | `Nama:` · `Pengambilan: Ambil sendiri` or `Pengambilan: Diantar` · `Alamat:` only for delivery · `Tanggal: {Hari}, {d} {Bulan} {yyyy}` · `Catatan:` only when the note is not blank. Values trimmed. The customer's WhatsApp number is never in the message |
-   | URL | `https://wa.me/6285159545168?text=` + `encodeURIComponent(message)` |
+   | URL | `https://wa.me/6285159545168?text=` + `encodeURIComponent(message)`, after a lone UTF-16 surrogate in the message is replaced with U+FFFD (it would make the encoding throw) |
 
 6. The client clears the cart, shows the confirmation step, and **navigates in the same tab** to `waUrl` (`window.location.href`). Opening a new window after an `await` is blocked by mobile popup blockers.
 7. **Fallback (FR14):** if the action fails (network, DB down), the client builds the same message without an order number from the cart, shows a notice, and still opens WhatsApp. The order then exists only in chat, and the admin can add it manually later if needed. In this case the cart is kept, so nothing is lost if WhatsApp doesn't open.
 
 The `CHECKOUT` event is written by the server inside that transaction, not sent as a beacon, because a beacon from a page that's about to navigate away is unreliable.
+
+**Contract.** `createOrder(input: unknown): Promise<CreateOrderResult>` is the only export of `(store)/actions.ts`. The transaction lives in `lib/checkout.ts` (`placeOrder`, `checkout`), so the core can be tested without a request.
+
+```ts
+type CreateOrderResult =
+  | { ok: true; orderNumber: string /* "KD-0065" */; waUrl: string }
+  | { ok: false; error: "validation"; fields: Partial<Record<keyof CheckoutInput, string>> } // one Indonesian message per field; a non-object gives {}
+  | { ok: false; error: "rate_limited" }
+  | { ok: false; error: "rejected"; lines: { productId: string; reason: "closed" | "unavailable" }[] } // every bad line: missing or hidden → unavailable, past deadline → closed
+  | { ok: false; error: "server" }; // anything thrown; rolled back; one console.error line with the error name and code, never input values
+```
+
+Steps 1–4 run in one interactive transaction, in this order: validation (invalid input writes nothing), rate limit, product load, writes. A `rejected` or `rate_limited` result commits the counter only.
+
+**Visitor and rate limit.** The IP is the first entry of `x-forwarded-for`, trimmed, else `x-real-ip`, else `""`; on Vercel the platform overwrites both with the client IP. The user agent is `user-agent`, else `""`. The visitor hash is §4.6 step 3; a missing `TRACKING_SECRET` throws and gives `server`. The checkout counter is the `rate_limits` row with key `checkout:<visitorHash>` and `window_start = floor(epoch_ms / 600000) × 600000` (fixed 10-minute UTC windows), incremented by one `INSERT … ON CONFLICT (key, window_start) DO UPDATE SET count = rate_limits.count + 1 RETURNING count`. A checkout is allowed while the count is ≤ 5. The upsert holds the row lock until commit, so concurrent checkouts of one visitor are counted without a lost update.
 
 ### 4.4 Admin authentication (`lib/auth.ts`)
 

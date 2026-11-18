@@ -366,7 +366,8 @@ describe("client-side defaults", { timeout: 60_000 }, () => {
   });
 });
 
-// Seed contents of M0.3 note 4 (P15), written from the task file, not copied from prisma/seed.ts.
+// Seed contents of M0.3 note 4 (P15) plus the two D7 fixtures (milestone plan §4.6), written from the
+// plans, not copied from prisma/seed.ts.
 const P15 = [
   ["Bolu Gulung", "Kue", "PRE_ORDER", null, null, "Lembut dengan filling nanas, strawberry, atau blueberry.", 1],
   ["Fudgy Brownies", "Brownies", "PRE_ORDER", null, null, "Padat, nyoklat, dan moist. Ukuran 20×10 cm.", 2],
@@ -375,29 +376,39 @@ const P15 = [
   ["Buko Mangga", "Dessert", "READY_STOCK", null, null, "Dessert mangga segar yang creamy dan dingin.", 5],
   ["Donut", "Donut", "READY_STOCK", null, null, "", 6],
   ["Hampers Natal", "Hampers", "PRE_ORDER", 35000, "2026-12-10", "Termasuk box, paper bag, kartu & hang tag edisi Natal.", 7],
+  ["Nastar", "Kue Kering", "PRE_ORDER", 90000, "2026-11-01", "Produk contoh untuk pengembangan, PO sudah ditutup.", 8],
+  ["Kastengel", "Kue Kering", "READY_STOCK", 85000, null, "Produk contoh untuk pengembangan.", 9],
 ];
 
-describe("development seed (P15)", { timeout: 60_000 }, () => {
-  it("inserts the note 4 rows into an empty table, and nothing on a second run", async () => {
+describe("development seed (P15, D7)", { timeout: 60_000 }, () => {
+  it("inserts the 9 listed rows into an empty table, and nothing on a second run", async () => {
     await inRolledBackTx(async (tx) => {
       await tx.product.deleteMany();
-      expect(await seedProducts(tx)).toBe(7);
+      expect(await seedProducts(tx)).toBe(9);
       const rows = await tx.$queryRaw<Record<string, unknown>[]>`
         SELECT name, category, type::text, price, order_deadline::text AS deadline, description, sort_order, is_active
         FROM products ORDER BY sort_order`;
       expect(rows.map((r) => [r.name, r.category, r.type, r.price, r.deadline, r.description, r.sort_order])).toEqual(P15);
       expect(rows.every((r) => r.is_active === true)).toBe(true);
       expect(await seedProducts(tx)).toBe(0);
-      expect(await tx.product.count()).toBe(7);
+      expect(await tx.product.count()).toBe(9);
     });
   });
 
-  it("inserts nothing when products already has a row", async () => {
+  it("inserts only missing listed products and leaves an existing row unchanged", async () => {
     await inRolledBackTx(async (tx) => {
       await tx.product.deleteMany();
-      await insertProduct(tx);
-      expect(await seedProducts(tx)).toBe(0);
-      expect(await tx.product.count()).toBe(1);
+      const unlisted = await insertProduct(tx);
+      const donut = await tx.product.create({
+        data: { name: "Donut", category: "Ubah", type: "PRE_ORDER", price: 1234, description: "diubah", isActive: false, sortOrder: 99 },
+      });
+      expect(await seedProducts(tx)).toBe(8);
+      expect(await tx.product.count()).toBe(10);
+      expect(await tx.product.findUnique({ where: { id: donut.id } })).toEqual(donut);
+      expect(await tx.product.count({ where: { name: "Donut" } })).toBe(1);
+      expect(await tx.product.count({ where: { id: unlisted } })).toBe(1);
+      const names = (await tx.product.findMany({ where: { name: { not: "Donut" } }, select: { name: true } })).map((p) => p.name);
+      expect(names.sort()).toEqual([...P15.map((r) => r[0] as string).filter((n) => n !== "Donut"), "schema-test"].sort());
     });
   });
 });

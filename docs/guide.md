@@ -60,6 +60,7 @@ Copy `.env.example` to `.env` (git-ignored). The project owner supplies the valu
 | `DATABASE_URL` | Pooled connection string of the development branch (host contains `-pooler`). Used by the app at runtime and by the seed and tests |
 | `DIRECT_URL` | Direct (unpooled) connection string of the development branch. Used by the Prisma CLI |
 | `DEV_DATABASE_HOST` | The direct host of the development branch (§4). The seed and `tests/db` refuse to run when `DATABASE_URL` points at any other host |
+| `TRACKING_SECRET` | Secret of the daily salt of the visitor hash (`src/lib/tracking.ts`), used by `createOrder` for the checkout rate limit. The project owner generates it (for example `openssl rand -hex 32`) and enters it; nobody else reads it. Without it every checkout returns the `server` result. The Vitest tests pass their own fake secret and don't need it |
 
 `npm run build`, `npm run dev`, `npm test` and `npm run test:e2e` all need `.env`. Without `DATABASE_URL` the build fails with `DATABASE_URL is not set`, because the home page imports `src/lib/db.ts`.
 
@@ -92,9 +93,9 @@ Every script in `package.json`:
 | `npm run start` | `next start` | Serves the output of `npm run build` |
 | `npm run lint` | `eslint .` | Lint. `src/generated/` and `.vercel/` are ignored |
 | `npm run typecheck` | `next typegen && tsc --noEmit` | Generates Next.js route types, then type-checks |
-| `npm test` | `vitest run` | All Vitest tests, **including `tests/db`**, which connect to the development branch and write inside transactions that are always rolled back |
+| `npm test` | `vitest run` | All Vitest tests, **including `tests/db`**, which connect to the development branch and write inside transactions that are always rolled back. Files run one at a time (`fileParallelism: false`). `tests/db/checkout.test.ts` inserts orders in rolled-back transactions, so each run moves `orders_id_seq` by about 15 (a rollback does not undo `nextval()`), and its concurrency test commits two `rate_limits` rows under a random `test:barrier:` key and deletes them at the end |
 | `npm run test:unit` | `vitest run --exclude 'tests/db/**'` | Vitest tests that need no database |
-| `npm run test:e2e` | `playwright test` | Playwright tests in `e2e/` at 360 px and desktop width. Starts `npm run dev` itself unless `PLAYWRIGHT_BASE_URL` is set. The home page reads its products from the development branch (cached by the dev server, §2), and `e2e/storefront.spec.ts` and `e2e/menu.spec.ts` expect the products of the seed in `sortOrder`, and `e2e/detail.spec.ts` its names, prices and descriptions, and `e2e/cart.spec.ts` Hampers Natal as a pre-order at Rp35.000 with the deadline 2026-12-10 and Soft Cookies as ready stock without a price |
+| `npm run test:e2e` | `playwright test` | Playwright tests in `e2e/` at 360 px and desktop width. Starts `npm run dev` itself unless `PLAYWRIGHT_BASE_URL` is set. The home page reads its products from the development branch (cached by the dev server, §2), and `e2e/storefront.spec.ts` and `e2e/menu.spec.ts` expect the nine products of the seed (§4) in `sortOrder`, and `e2e/detail.spec.ts` its names, prices and descriptions, and `e2e/cart.spec.ts` Hampers Natal as a pre-order at Rp35.000 with the deadline 2026-12-10 and Soft Cookies as ready stock without a price |
 | `npm run vercel-build` | `prisma migrate deploy && next build` | **Run by Vercel only**, instead of `build`. Applies pending migrations to the branch of that Vercel environment, then builds. Never run it locally |
 | `postinstall` | `prisma generate` | Runs automatically after `npm ci`; regenerates the Prisma client |
 
@@ -159,7 +160,9 @@ How a migration is made (System Design §4.10):
 npx prisma db seed
 ```
 
-This runs `node prisma/seed.ts` (configured in `prisma.config.ts`). It inserts the 7 sample products into an empty `products` table and does nothing when products exist (`products already has 7 rows; nothing inserted`). It refuses to run unless the host of `DATABASE_URL`, without `-pooler`, equals `DEV_DATABASE_HOST`. Never seed production.
+This runs `node prisma/seed.ts` (configured in `prisma.config.ts`). It inserts each listed product whose name is not in `products` yet and leaves existing rows unchanged, so a second run inserts nothing (`inserted 0 products; products has 9 rows`). The list is the 7 sample products plus two development fixtures for the checkout tests: **Nastar** (pre-order, Rp90.000, deadline 2026-11-01, so always closed) and **Kastengel** (ready stock, Rp85.000, no deadline, the open priced product). It refuses to run unless the host of `DATABASE_URL`, without `-pooler`, equals `DEV_DATABASE_HOST`. Never seed production.
+
+After seeding, the dev server may still serve the old product list from `.next/dev/cache` (§2) for up to an hour. Empty that folder before `npm run test:e2e` so the page reads the new list.
 
 ### Schema test
 
@@ -173,7 +176,7 @@ This runs `node prisma/seed.ts` (configured in `prisma.config.ts`). It inserts t
 | Preview | every other branch, in practice `develop` | Neon development branch | Same build step, against the development branch |
 | Local | — | Neon development branch, from `.env` | By hand (§4) |
 
-**Vercel variables.** `DATABASE_URL` and `DIRECT_URL` are entered by hand per Vercel environment: production values in Production only, development values in Preview only, nothing in Development. The Neon Vercel integration is not installed, because it would create a database branch per preview deployment while previews must use the one development branch. Changing Vercel or Neon settings is done by the project owner.
+**Vercel variables.** `DATABASE_URL` and `DIRECT_URL` are entered by hand per Vercel environment: production values in Production only, development values in Preview only, nothing in Development. `TRACKING_SECRET` likewise: the development value in Preview, a different production value in Production, both marked sensitive. The Neon Vercel integration is not installed, because it would create a database branch per preview deployment while previews must use the one development branch. Changing Vercel or Neon settings is done by the project owner.
 
 **Deploy flow.**
 

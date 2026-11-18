@@ -13,6 +13,7 @@ import {
   type OrderCustomer,
   type OrderLine,
 } from "@/lib/order";
+import { checkoutSchema } from "@/lib/validation";
 
 // The two examples of the WhatsApp message contract (D1, System Design §4.3), byte for byte.
 const SUCCESS = `Halo Kagumi Dough! Aku mau pesan (dari website)
@@ -294,5 +295,29 @@ describe("whatsappUrl (D1)", () => {
         }),
       ).length;
     expect({ ascii: longest("a", 100000), threeByteCharacters: longest("€", 2147483647) }).toEqual({ ascii: 3799, threeByteCharacters: 23765 });
+  });
+
+  // TR-M1.1-01 (option c, approved 2026-11-18): every text the checkout schema accepts can be put into the link.
+  it("replaces a lone surrogate with U+FFFD and keeps surrogate pairs", () => {
+    const text = (message: string) => decodeURIComponent(whatsappUrl(message).slice(PREFIX.length));
+    expect(text("a\uD800b")).toBe("a\uFFFDb");
+    expect(text("a\uDC00")).toBe("a\uFFFD");
+    expect(text("\uDC00\uD800")).toBe("\uFFFD\uFFFD");
+    expect(text("Kue 🎄 Natal")).toBe("Kue 🎄 Natal");
+  });
+
+  it("encodes every name, address and note the schema accepts, including a lone surrogate and U+0000", () => {
+    for (const bad of ["\uD83D", "\uDE00x", "a\u0000b"]) {
+      const parsed = checkoutSchema("2026-11-17").parse({
+        customerName: `Rina ${bad}`,
+        customerPhone: "081234567890",
+        fulfillment: "DELIVERY",
+        address: `Jl. ${bad}`,
+        requestedDate: "2026-11-20",
+        note: `Catatan ${bad}`,
+        items: [{ productId: "019a8f3e-7c2b-7abc-8def-000000000001", quantity: 1 }],
+      });
+      expect(() => whatsappUrl(buildOrderMessage({ lines: LINES, customer: parsed }))).not.toThrow();
+    }
   });
 });

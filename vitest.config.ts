@@ -13,5 +13,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // D19: one file at a time. tests/db/checkout.test.ts consumes orders_id_seq (ROLLBACK does not undo
+    // nextval()), and tests/db/schema.test.ts asserts the sequence did not move during its own file.
+    fileParallelism: false,
   },
 });

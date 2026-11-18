@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-// The development seed (P15), in sortOrder: name, category, tag, price text.
+// The development seed (P15 plus the D7 fixtures), in sortOrder: name, category, tag, price text.
 const SEED = [
   ["Bolu Gulung", "Kue", "Pre-order", "Harga via WA"],
   ["Fudgy Brownies", "Brownies", "Pre-order", "Harga via WA"],
@@ -9,10 +9,19 @@ const SEED = [
   ["Buko Mangga", "Dessert", "Ready stock", "Harga via WA"],
   ["Donut", "Donut", "Ready stock", "Harga via WA"],
   ["Hampers Natal", "Hampers", "Pre-order", "Rp35.000"],
+  ["Nastar", "Kue Kering", "Pre-order", "Rp90.000"],
+  ["Kastengel", "Kue Kering", "Ready stock", "Rp85.000"],
 ] as const;
 const NAMES = SEED.map(([name]) => name);
-const PRE_ORDERS = ["Bolu Gulung", "Fudgy Brownies", "Brownies Custom", "Hampers Natal"];
-const READY = ["Soft Cookies", "Buko Mangga", "Donut"];
+// Nastar's deadline (2026-11-01) has passed at every clock below, so it is always in the closed group,
+// after the open cards. Each list is the displayed order: open cards in sortOrder, then closed ones.
+const ALL_OPEN = ["Bolu Gulung", "Fudgy Brownies", "Brownies Custom", "Soft Cookies", "Buko Mangga", "Donut", "Hampers Natal", "Kastengel", "Nastar"];
+const PRE_ORDERS = ["Bolu Gulung", "Fudgy Brownies", "Brownies Custom", "Hampers Natal", "Nastar"];
+const READY = ["Soft Cookies", "Buko Mangga", "Donut", "Kastengel"];
+// The closed group in sortOrder: Nastar alone before Hampers Natal's deadline, both after it.
+const CLOSED_BEFORE = ["Nastar"];
+const CLOSED_AFTER = ["Hampers Natal", "Nastar"];
+const lastTitles = async (page: Page, n: number) => (await titles(page).allTextContents()).slice(-n);
 
 // Hampers Natal's deadline is 2026-12-10 (inclusive, WIB = UTC+7).
 const OPEN = "2026-11-20T03:00:00Z"; // 10:00 WIB
@@ -57,7 +66,7 @@ const token = (page: Page, name: string) =>
 
 test("every active product is a card with category, name, price, tag and deadline (FR2, FR3)", async ({ page }) => {
   await openAt(page, OPEN);
-  await expect(titles(page)).toHaveText(NAMES);
+  await expect(titles(page)).toHaveText(ALL_OPEN);
   for (const [name, category, tag, price] of SEED) {
     const item = card(page, name);
     await expect(item.locator("p").filter({ hasText: exactly(category) }), `${name} category`).toHaveCount(1);
@@ -105,7 +114,7 @@ test("the filter shows all, only ready stock, or only pre-order products (FR4)",
   expect(await pressed()).toEqual(["false", "false", "true"]);
 
   await chip(page, "Semua").click();
-  await expect(titles(page)).toHaveText(NAMES);
+  await expect(titles(page)).toHaveText(ALL_OPEN);
   expect(await pressed()).toEqual(["true", "false", "false"]);
 });
 
@@ -113,23 +122,27 @@ test("a closed product stays listed under its type, last (FR4, FR5)", async ({ p
   await openAt(page, CLOSED);
   await chip(page, "Pre-order").click();
   await expect(titles(page)).toHaveText(PRE_ORDERS);
-  await expect(card(page, "Hampers Natal").getByText("Order sudah ditutup", { exact: true })).toBeVisible();
+  for (const name of CLOSED_AFTER) {
+    await expect(card(page, name).getByText("Order sudah ditutup", { exact: true })).toBeVisible();
+  }
   await chip(page, "Ready stock").click();
   await expect(titles(page)).toHaveText(READY);
 });
 
 test("after its deadline a product is closed: text, 50% thumbnail, last card, no add button (FR5)", async ({ page }) => {
   await openAt(page, CLOSED);
-  await expect(titles(page).last()).toHaveText("Hampers Natal");
-  const closed = card(page, "Hampers Natal");
-  await expect(closed.getByText("Order sudah ditutup", { exact: true })).toBeVisible();
-  await expect(thumb(page, "Hampers Natal")).toHaveCSS("opacity", "0.5");
-  // Only the two detail openers are left (thumbnail and name, M1.4): the closed note is text.
-  const buttons = closed.getByRole("button");
-  await expect(buttons).toHaveCount(2);
-  await expect(buttons.nth(0)).toHaveAccessibleName("Lihat detail Hampers Natal");
-  await expect(buttons.nth(1)).toHaveAccessibleName("Hampers Natal");
-  await expect(closed.getByText("+ Tambah ke keranjang")).toHaveCount(0);
+  expect(await lastTitles(page, CLOSED_AFTER.length)).toEqual(CLOSED_AFTER);
+  for (const name of CLOSED_AFTER) {
+    const closed = card(page, name);
+    await expect(closed.getByText("Order sudah ditutup", { exact: true }), name).toBeVisible();
+    await expect(thumb(page, name), name).toHaveCSS("opacity", "0.5");
+    // Only the two detail openers are left (thumbnail and name, M1.4): the closed note is text.
+    const buttons = closed.getByRole("button");
+    await expect(buttons, name).toHaveCount(2);
+    await expect(buttons.nth(0)).toHaveAccessibleName(`Lihat detail ${name}`);
+    await expect(buttons.nth(1)).toHaveAccessibleName(name);
+    await expect(closed.getByText("+ Tambah ke keranjang"), name).toHaveCount(0);
+  }
 
   const open = card(page, "Bolu Gulung");
   await expect(open.getByRole("button", { name: "+ Tambah ke keranjang", exact: true })).toBeVisible();
@@ -149,6 +162,7 @@ test("a page left open past the deadline closes the product when the tab is visi
   await openAt(page, LAST_MINUTE);
   const item = card(page, "Hampers Natal");
   await expect(item.getByRole("button", { name: "+ Tambah ke keranjang", exact: true })).toBeVisible();
+  expect(await lastTitles(page, CLOSED_BEFORE.length)).toEqual(CLOSED_BEFORE);
   await expect(promo(page)).toContainText("Hampers Natal");
 
   // No reload: the clock passes WIB midnight and the visitor comes back to the tab.
@@ -156,7 +170,7 @@ test("a page left open past the deadline closes the product when the tab is visi
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await expect(item.getByText("Order sudah ditutup", { exact: true })).toBeVisible();
   await expect(item.getByText("+ Tambah ke keranjang")).toHaveCount(0);
-  await expect(titles(page).last()).toHaveText("Hampers Natal");
+  await expect(async () => expect(await lastTitles(page, CLOSED_AFTER.length)).toEqual(CLOSED_AFTER)).toPass();
   await expect(promo(page)).toContainText("Bolu Gulung");
 });
 
@@ -240,7 +254,10 @@ test("placeholder tones follow butter, pink, sky, mint by position; the mark is 
       };
     });
   });
-  expect(thumbs.map((t) => t.tone)).toEqual(["butter", "pink", "sky", "mint", "butter", "pink", "sky"]);
+  // The tone follows the product's sortOrder position; the cards are read in display order (closed last).
+  const TONES = ["butter", "pink", "sky", "mint"];
+  expect(thumbs.map((t) => t.tone)).toEqual(ALL_OPEN.map((name) => TONES[NAMES.indexOf(name as (typeof NAMES)[number]) % 4]));
+  expect(thumbs.map((t) => t.tone)).toEqual(["butter", "pink", "sky", "mint", "butter", "pink", "sky", "butter", "mint"]);
   for (const t of thumbs) {
     expect(t).toMatchObject({ markHidden: "true", markAlt: "", markShare: 40, ratio: 80 });
   }

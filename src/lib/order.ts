@@ -102,4 +102,10 @@ export function buildOrderMessage({
   ].join("\n");
 }
 
-export const whatsappUrl = (message: string) => `https://wa.me/${SHOP_WHATSAPP}?text=${encodeURIComponent(message)}`;
+// A lone UTF-16 surrogate makes encodeURIComponent throw (TR-M1.1-01): it becomes U+FFFD, pairs are kept.
+// A regex without lookbehind or toWellFormed(), so older Safari can run the fallback too.
+const wellFormed = (text: string) =>
+  text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDFFF]/g, (c) => (c.length === 2 ? c : "�"));
+
+export const whatsappUrl = (message: string) =>
+  `https://wa.me/${SHOP_WHATSAPP}?text=${encodeURIComponent(wellFormed(message))}`;
