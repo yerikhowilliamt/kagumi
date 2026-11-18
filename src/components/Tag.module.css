@@ -1,0 +1,22 @@
+/* design.md §5 Tags & status */
+.tag {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: var(--r-full);
+  font-family: var(--head);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.po {
+  background: var(--tag-po-bg);
+  color: var(--tag-po-fg);
+}
+
+.ready {
+  background: var(--tag-bg);
+  color: var(--success);
+}

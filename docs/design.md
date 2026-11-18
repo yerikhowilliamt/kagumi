@@ -330,11 +330,15 @@ Two columns. Left: eyebrow, h1 with highlighter, lead, Primary + Text link, 3 fa
 
 Track `--surface`, 1px `--line`, 4px padding. Chips 38px, `--muted`. Selected: `--strong` / `--on-strong`. Semua / Ready stock / Pre-order.
 
+- **Empty menu** (no active product): the section heading stays, the chips are hidden, and the menu shows "Menu sedang kami siapkan. Untuk pesan sekarang, chat kami di WhatsApp." in `--muted` with a Line "Chat WhatsApp" button. The marquee and the promo card are hidden too, and the notice bar shows the delivery-area text alone.
+- **No match** (the selected filter has no product): the chips stay, and the grid is replaced by "Belum ada produk ready stock saat ini." or "Belum ada produk pre-order saat ini." in `--muted`.
+
 ### Product card
 
 Not boxed: the thumbnail carries the color, and the text sits on the page background.
 
 - **Thumbnail** (4/5, `--radius`, a `<button>` labelled "Lihat detail {name}" → opens product detail): photo with hover zoom, or placeholder (pastel fill + logo burst mark, hover rotate). Tag top-left.
+- **Category** 13px `--muted`, on its own line above the name.
 - **Meta:** name (clickable → detail) left, price right. No price → "Harga via WA" in `--muted`.
 - **Description** 15px `--muted`. **Deadline** (optional) 13px/500 `--warning`.
 - **Add button:** Line-style pill 40px, "+ Tambah ke keranjang". When the product is in the cart it switches to `--strong` / `--on-strong`, "✓ Di keranjang (n)", and clicking adds one more.

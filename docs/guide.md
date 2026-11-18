@@ -71,7 +71,7 @@ Run this before any command that writes to a database (tests, seed, migrations).
 node -e "process.loadEnvFile(); const u = new URL(process.env.DIRECT_URL); console.log(u.hostname, u.pathname.slice(1))"
 ```
 
-The output must be `ep-noisy-fog-a1x76fct.ap-southeast-1.aws.neon.tech neondb`. If it is anything else, stop: your `.env` points at the wrong branch.
+The output must be `ep-dark-bird-a1woad4p.ap-southeast-1.aws.neon.tech neondb`. If it is anything else, stop: your `.env` points at the wrong branch.
 
 ### Run locally
 
@@ -94,7 +94,7 @@ Every script in `package.json`:
 | `npm run typecheck` | `next typegen && tsc --noEmit` | Generates Next.js route types, then type-checks |
 | `npm test` | `vitest run` | All Vitest tests, **including `tests/db`**, which connect to the development branch and write inside transactions that are always rolled back |
 | `npm run test:unit` | `vitest run --exclude 'tests/db/**'` | Vitest tests that need no database |
-| `npm run test:e2e` | `playwright test` | Playwright tests in `e2e/` at 360 px and desktop width. Starts `npm run dev` itself unless `PLAYWRIGHT_BASE_URL` is set. The home page reads its products from the development branch (cached by the dev server, §2), and `e2e/storefront.spec.ts` expects the product names of the seed in `sortOrder` |
+| `npm run test:e2e` | `playwright test` | Playwright tests in `e2e/` at 360 px and desktop width. Starts `npm run dev` itself unless `PLAYWRIGHT_BASE_URL` is set. The home page reads its products from the development branch (cached by the dev server, §2), and `e2e/storefront.spec.ts` and `e2e/menu.spec.ts` expect the products of the seed in `sortOrder` |
 | `npm run vercel-build` | `prisma migrate deploy && next build` | **Run by Vercel only**, instead of `build`. Applies pending migrations to the branch of that Vercel environment, then builds. Never run it locally |
 | `postinstall` | `prisma generate` | Runs automatically after `npm ci`; regenerates the Prisma client |
 
@@ -122,7 +122,7 @@ Other commands run during M0:
 | production | The Vercel production deployment | Only the production build (`vercel-build`) and the running app. Never a developer machine: no tests, seeds, scripts or Prisma CLI commands |
 | development | Local development, tests, the seed, Vercel preview deployments | Developers, tests and the preview build |
 
-**The development branch is the disposable database:** host `ep-noisy-fog-a1x76fct.ap-southeast-1.aws.neon.tech` (the pooled host adds `-pooler` to the first label), database `neondb`. Tests, seeds and scripts run only against it. Connection strings and passwords are never written into the repository.
+**The development branch is the disposable database:** host `ep-dark-bird-a1woad4p.ap-southeast-1.aws.neon.tech` (the pooled host adds `-pooler` to the first label), database `neondb`. Tests, seeds and scripts run only against it. Connection strings and passwords are never written into the repository.
 
 ### Schema and migrations
 
@@ -195,12 +195,12 @@ src/
   app/               App Router: layout.tsx (fonts, theme script), icons
     (store)/page.tsx The storefront home page: static, products cached with the tag `products`
     fonts/           Self-hosted Switzer font files
-  components/        Shared components with their CSS Modules (ThemeToggle, Button)
+  components/        Shared components with their CSS Modules
   lib/
     db.ts            The Prisma client on the pooled URL through @prisma/adapter-neon
     order.ts         Order number, rupiah, WIB dates, the WhatsApp message and URL (no imports)
     validation.ts    Checkout schema and phone normalization (zod)
-    menu.ts          Storefront product types and the row mapper (no imports)
+    menu.ts          Storefront product types, the row mapper and the menu rules: sort, filter, open pre-order, promo product (imports only ./order)
   styles/tokens.css  Every design token, light and dark, and the global base rules
   generated/prisma/  Generated Prisma client (git-ignored, written by prisma generate)
 prisma/

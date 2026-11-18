@@ -51,6 +51,12 @@
   text-align: center;
 }
 
+/* The key phrase (OpenPreOrderNotice) */
+.notice strong {
+  color: var(--butter);
+  font-weight: 600;
+}
+
 /* Navigation */
 .nav {
   position: sticky;

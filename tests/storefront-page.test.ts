@@ -1,7 +1,8 @@
 // The storefront page rendered with its database and data cache replaced: no network (BSA-M1.2-01, -02).
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/(store)/page";
+import buttonStyles from "@/components/Button.module.css";
 import { toStoreProduct } from "@/lib/menu";
 
 const { findMany, cached } = vi.hoisted(() => ({
@@ -24,6 +25,10 @@ const ROWS = [
 ].map((row, i) => ({ id: `p${i}`, category: "Kue", description: "", price: 10000, type: "PRE_ORDER", media: [], ...row }));
 
 const render = async () => renderToStaticMarkup(await Home());
+const between = (html: string, from: string, to: string) => html.slice(html.indexOf(from), html.indexOf(to));
+const marqueeOf = (html: string) => between(html, 'data-testid="marquee"', 'id="menu"');
+const menuOf = (html: string) => between(html, 'id="menu"', 'id="cara-pesan"');
+const cardNames = (html: string) => [...menuOf(html).matchAll(/<h3[^>]*>([^<]+)<\/h3>/g)].map((m) => m[1]);
 
 describe("storefront page", () => {
   beforeEach(() => findMany.mockReset().mockResolvedValue(ROWS));
@@ -50,7 +55,8 @@ describe("storefront page", () => {
   it("renders the marquee with each product name twice", async () => {
     const html = await render();
     expect(html).toContain('data-testid="marquee"');
-    expect(html.match(/Hampers Natal/g)).toHaveLength(2);
+    // The menu and the promo card name it too.
+    expect(marqueeOf(html).match(/Hampers Natal/g)).toHaveLength(2);
   });
 
   it("hides the marquee with no active products and still renders the page", async () => {
@@ -59,5 +65,73 @@ describe("storefront page", () => {
     expect(html).not.toContain('data-testid="marquee"');
     expect(html.match(/<h1[\s>]/g)).toHaveLength(1);
     expect(html).toContain('id="menu"');
+  });
+});
+
+// The date-dependent parts as the server renders them (D22): the browser takes over after hydration (e2e/menu.spec.ts).
+describe("storefront page: menu, notice bar and promo card at the render date", () => {
+  const row = (name: string, type: string, orderDeadline: Date | null, i: number) => ({
+    id: `p${i}`,
+    name,
+    category: "Kue",
+    description: "",
+    price: null,
+    type,
+    orderDeadline,
+    media: [],
+  });
+  // The dated product comes first in sortOrder.
+  const DATED_FIRST = [
+    row("Hampers Natal", "PRE_ORDER", new Date("2026-12-10T00:00:00.000Z"), 0),
+    row("Soft Cookies", "READY_STOCK", null, 1),
+  ];
+  const renderAt = async (iso: string) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(iso));
+    return render();
+  };
+
+  afterEach(() => vi.useRealTimers());
+
+  it("on the deadline day in WIB (23:59): open, in sortOrder, with the phrase and the promo card", async () => {
+    findMany.mockResolvedValue(DATED_FIRST);
+    const html = await renderAt("2026-12-10T16:59:00.000Z");
+    expect(cardNames(html)).toEqual(["Hampers Natal", "Soft Cookies"]);
+    expect(html).not.toContain("Order sudah ditutup");
+    expect(html).toContain("<strong>Open pre-order</strong>");
+    expect(html).toContain("Pre-order dibuka");
+  });
+
+  it("one minute later (00:00 WIB, still the deadline day in UTC): closed, sorted last, no phrase, no promo card", async () => {
+    findMany.mockResolvedValue(DATED_FIRST);
+    const html = await renderAt("2026-12-10T17:00:00.000Z");
+    expect(cardNames(html)).toEqual(["Soft Cookies", "Hampers Natal"]);
+    expect(menuOf(html).match(/Order sudah ditutup/g)).toHaveLength(1);
+    expect(html).not.toContain("Open pre-order");
+    expect(html).not.toContain("Pre-order dibuka");
+    expect(html).toContain("Pengantaran tersedia untuk area Solo");
+  });
+
+  it("only ready stock: no phrase and no promo card, the chips stay", async () => {
+    findMany.mockResolvedValue([row("Soft Cookies", "READY_STOCK", null, 0)]);
+    const html = await renderAt("2026-11-20T03:00:00.000Z");
+    expect(html).not.toContain("Open pre-order");
+    expect(html).not.toContain("Pre-order dibuka");
+    expect(menuOf(html).match(/aria-pressed=/g)).toHaveLength(3);
+  });
+
+  it("no products (D8): the heading, the empty text and a WhatsApp link; no chips, phrase or promo card", async () => {
+    findMany.mockResolvedValue([]);
+    const html = await renderAt("2026-11-20T03:00:00.000Z");
+    const menu = menuOf(html);
+    expect(menu).toContain("Pilihan favorit kami");
+    expect(menu).toContain("Menu sedang kami siapkan. Untuk pesan sekarang, chat kami di WhatsApp.");
+    const link = menu.match(/<a[^>]*href="https:\/\/wa\.me\/6285159545168"[^>]*>Chat WhatsApp<\/a>/)?.[0] ?? "";
+    // D8: a Line button (BSA-M1.3-01).
+    expect(link.match(/class="([^"]*)"/)?.[1].split(" ")).toContain(buttonStyles.line);
+    expect(menu).not.toContain("aria-pressed");
+    expect(cardNames(html)).toEqual([]);
+    expect(html).not.toContain("Open pre-order");
+    expect(html).not.toContain("Pre-order dibuka");
   });
 });

@@ -1,4 +1,6 @@
-// Product data the storefront page hands to its components (D9). No imports: client components use this file.
+// Product data the storefront page hands to its components (D9), and the menu rules that depend on today's date.
+// Client components use this file: it imports only ./order, which imports nothing (D17).
+import { isClosed } from "./order";
 
 const TONES = ["butter", "pink", "sky", "mint"] as const;
 
@@ -58,3 +60,35 @@ export function toStoreProduct(row: ProductRow, index: number): StoreProduct {
       })),
   };
 }
+
+export type MenuFilter = "ALL" | StoreProduct["type"];
+
+// Every function below takes the products in sortOrder, as the page reads them, and `today` as `jakartaToday()`.
+
+/** Open products in their order, then closed ones in their order (FR5). */
+export function sortForMenu(products: StoreProduct[], today: string) {
+  const closed = (p: StoreProduct) => isClosed(p.orderDeadline, today);
+  return [...products.filter((p) => !closed(p)), ...products.filter(closed)];
+}
+
+/** Closed products stay listed under their type (FR4). */
+export const filterMenu = (products: StoreProduct[], filter: MenuFilter) =>
+  filter === "ALL" ? products : products.filter((p) => p.type === filter);
+
+const openPreOrders = (products: StoreProduct[], today: string) =>
+  products.filter((p) => p.type === "PRE_ORDER" && !isClosed(p.orderDeadline, today));
+
+export const hasOpenPreOrder = (products: StoreProduct[], today: string) => openPreOrders(products, today).length > 0;
+
+/** The open pre-order with the nearest deadline; those without a deadline come after; ties keep sortOrder. */
+export function promoProduct(products: StoreProduct[], today: string): StoreProduct | null {
+  const open = openPreOrders(products, today);
+  // `YYYY-MM-DD` strings compare as dates. The first of equal deadlines wins, so sortOrder breaks ties.
+  const dated = open.filter((p) => p.orderDeadline !== null);
+  if (dated.length === 0) return open[0] ?? null;
+  return dated.reduce((nearest, p) => (p.orderDeadline! < nearest.orderDeadline! ? p : nearest));
+}
+
+/** `empty`: no active product at all. `no-match`: the filter has none (D8). */
+export const menuState = (products: StoreProduct[], filter: MenuFilter) =>
+  products.length === 0 ? "empty" : filterMenu(products, filter).length === 0 ? "no-match" : "list";
