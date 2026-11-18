@@ -4,6 +4,10 @@
 
 export const SHOP_WHATSAPP = "6285159545168";
 
+// Cart limits (System Design §9). Here, not in validation.ts, so the storefront steppers read them without zod.
+export const MAX_LINES = 20;
+export const MAX_QTY = 50;
+
 export type OrderLine = { name: string; unitPrice: number | null; quantity: number };
 
 export type OrderCustomer = {

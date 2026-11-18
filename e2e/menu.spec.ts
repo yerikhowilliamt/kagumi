@@ -293,3 +293,21 @@ test("chips are 38px with a 44px hit area; the add button is 40px with a 44px hi
   const add = card(page, "Bolu Gulung").getByRole("button", { name: "+ Tambah ke keranjang", exact: true });
   expect(await add.evaluate(hit)).toEqual({ height: 40, above: true, below: true });
 });
+
+test("the card name button reaches about 44px of hit area, vertically only (design.md §5)", async ({ page }) => {
+  await openAt(page, OPEN);
+  const name = card(page, "Hampers Natal").getByRole("button", { name: "Hampers Natal", exact: true });
+  const price = await card(page, "Hampers Natal").getByText("Rp35.000", { exact: true }).elementHandle();
+  const probe = await name.evaluate((el, priceEl) => {
+    el.scrollIntoView({ block: "center" });
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const p = priceEl!.getBoundingClientRect();
+    return {
+      above: document.elementFromPoint(x, r.top - 10) === el,
+      below: document.elementFromPoint(x, r.bottom + 10) === el,
+      price: document.elementFromPoint(p.left + p.width / 2, p.top + p.height / 2) === priceEl,
+    };
+  }, price);
+  expect(probe).toEqual({ above: true, below: true, price: true });
+});

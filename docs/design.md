@@ -211,7 +211,7 @@ Flat by default. Depth comes from color blocks and hairlines.
 | > 1180px | — | KPIs 4 columns, overview 1.6fr/1fr and 3-column rows |
 | ≤ 1180px | — | KPIs 2 columns, all two-column layouts stack |
 | ≤ 960px | Nav text links hidden. Hero stacks, product grid 2 columns, CTA 1 column | — |
-| ≤ 760px | Product detail becomes a bottom sheet (92vh), cart sheet full width | Sidebar → topbar + bottom nav, tables → cards, sparklines hidden, FAB for "Tambah produk" |
+| ≤ 760px | Product detail becomes a bottom sheet (92dvh), cart sheet full width | Sidebar → topbar + bottom nav, tables → cards, sparklines hidden, FAB for "Tambah produk" |
 | ≤ 640px | Nav: logo + theme + WhatsApp + cart. Grid 1 column. Sticky cart bar appears when the cart has items | — |
 
 ### Shape: starburst
@@ -349,7 +349,7 @@ Not boxed: the thumbnail carries the color, and the text sits on the page backgr
 Native `<dialog>` with `showModal()`, backdrop as in 4. Desktop: 2 columns.
 - **Gallery:** main media (4/5, `r-lg`) + 4-column thumbnail row (`r-sm`, selected = 2px `--ink` border, video thumbs show a ▶ overlay). Videos play inline in the main slot.
 - **Info:** close button top-right, tag, title, price (`--muted` "Harga dikonfirmasi via WhatsApp" when empty), description, deadline, a short fact list (pickup/delivery, made fresh) above a hairline, then a bottom row with the quantity stepper (46px) and Primary "Tambah ke keranjang".
-- **Mobile (≤ 760px):** bottom sheet, 92vh max, top corners 24px, buy row sticky at the bottom, close button sticky at the top right.
+- **Mobile (≤ 760px):** bottom sheet, 92dvh max (92% of the visible viewport), top corners 24px, buy row sticky at the bottom, close button sticky at the top right.
 - **Short desktop viewports:** the dialog is capped at the viewport height minus 32px and scrolls.
 - Closes on ✕, Esc, or backdrop click.
 

@@ -86,7 +86,7 @@
   font-family: var(--head);
   font-size: 15px;
   font-weight: 500;
-  color: var(--muted);
+  color: var(--warning);
 }
 
 @media (max-width: 760px) {

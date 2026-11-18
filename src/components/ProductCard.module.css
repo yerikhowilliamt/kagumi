@@ -64,6 +64,7 @@
 
 /* The name opens the detail too. */
 .nameButton {
+  position: relative;
   padding: 0;
   border: 0;
   background: none;
@@ -72,6 +73,18 @@
   letter-spacing: inherit;
   text-align: left;
   cursor: pointer;
+  transition: scale 0.1s ease-out;
+}
+
+/* About 23px box, about 45px hit area; vertical only, so it never reaches the price beside it. */
+.nameButton::after {
+  content: "";
+  position: absolute;
+  inset: -11px 0;
+}
+
+.nameButton:active {
+  scale: 0.97;
 }
 
 .nameButton:hover {

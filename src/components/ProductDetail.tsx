@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { formatDateShort, formatRupiah, isClosed } from "@/lib/order";
+import { MAX_QTY, formatDateShort, formatRupiah, isClosed } from "@/lib/order";
 import Button from "./Button";
 import Dialog from "./Dialog";
 import ProductThumb from "./ProductThumb";
@@ -61,7 +61,7 @@ export default function ProductDetail() {
             <p className={styles.closed}>Order sudah ditutup</p>
           ) : (
             <>
-              <QuantityStepper value={qty} min={1} max={50} onChange={setQty} name={product.name} size="lg" />
+              <QuantityStepper value={qty} min={1} max={MAX_QTY} onChange={setQty} name={product.name} size="lg" />
               {/* Adds to the cart in M1.5. */}
               <Button size="md" block>
                 Tambah ke keranjang

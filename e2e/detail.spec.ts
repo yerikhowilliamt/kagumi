@@ -122,6 +122,34 @@ test("the stepper does nothing below 1 and stops at 50 (K2)", async ({ page }) =
   await expect(count(dialog)).toHaveText("49");
 });
 
+test("the card name and the stepper buttons shrink on press, a stepper button at its limit does not (design.md §4)", async ({ page }) => {
+  const scale = (l: Locator) => l.evaluate((el) => getComputedStyle(el).scale);
+  const press = async (l: Locator) => {
+    const box = (await l.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+  };
+
+  await page.clock.setFixedTime(new Date(OPEN));
+  await page.goto("/");
+  const name = nameButton(page, "Hampers Natal");
+  await name.scrollIntoViewIfNeeded();
+  await press(name);
+  await expect.poll(() => scale(name)).toBe("0.97");
+  await page.mouse.up();
+
+  const dialog = await openDetail(page, thumb(page, "Hampers Natal"), "Hampers Natal");
+  await openState(dialog);
+  const minus = dialog.getByRole("button", { name: "Kurangi Hampers Natal", exact: true });
+  const plus = dialog.getByRole("button", { name: "Tambah Hampers Natal", exact: true });
+  await press(minus); // aria-disabled at 1: reading the style starts any transition, so none means no press scale
+  expect(await minus.evaluate((el) => [getComputedStyle(el).scale, el.getAnimations().length])).toEqual(["none", 0]);
+  await page.mouse.up();
+  await press(plus);
+  await expect.poll(() => scale(plus)).toBe("0.97");
+  await page.mouse.up();
+});
+
 test("the stepper restarts at 1 on every opening, same or other product (D6)", async ({ page }) => {
   const dialog = await openDetail(page, thumb(page, "Hampers Natal"), "Hampers Natal");
   const plus = dialog.getByRole("button", { name: "Tambah Hampers Natal", exact: true });
@@ -143,7 +171,10 @@ test("the stepper restarts at 1 on every opening, same or other product (D6)", a
 
 test("a closed product shows the closed note and no stepper or add button (K2)", async ({ page }) => {
   const dialog = await openDetail(page, thumb(page, "Hampers Natal"), "Hampers Natal", CLOSED);
-  await expect(dialog.getByText("Order sudah ditutup", { exact: true })).toBeVisible();
+  const note = dialog.getByText("Order sudah ditutup", { exact: true });
+  await expect(note).toBeVisible();
+  // design.md §2.4: --warning is the closed-PO note's color.
+  await expect(note).toHaveCSS("color", await token(page, "--warning", "color"));
   await expect(stepper(dialog)).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "Tambah ke keranjang" })).toHaveCount(0);
 });

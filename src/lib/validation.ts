@@ -1,9 +1,9 @@
 // The checkout input rules, shared by the checkout form and createOrder.
 // Client components import this file: it may import only zod and ./order.
 import { z } from "zod";
+import { MAX_LINES, MAX_QTY } from "./order";
 
-export const MAX_LINES = 20;
-export const MAX_QTY = 50;
+export { MAX_LINES, MAX_QTY };
 
 const NAME_REQUIRED = "Nama wajib diisi.";
 const NAME_MAX = "Nama maksimal 80 karakter.";

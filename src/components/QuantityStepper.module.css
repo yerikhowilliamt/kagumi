@@ -29,7 +29,13 @@
   color: var(--ink);
   font-size: 16px;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition:
+    background-color 0.2s ease,
+    scale 0.1s ease-out;
+}
+
+.button:not([aria-disabled="true"]):active {
+  scale: 0.97;
 }
 
 .lg .button {
