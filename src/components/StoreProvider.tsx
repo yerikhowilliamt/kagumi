@@ -1,6 +1,7 @@
 "use client";
 
-import { createContext, useContext, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { addLine, CART_KEY, parseCart, removeLine, serializeCart, setQty, type CartLine } from "@/lib/cart";
 import type { StoreProduct } from "@/lib/menu";
 import { jakartaToday } from "@/lib/order";
 
@@ -14,6 +15,17 @@ type Store = {
   detailOpen: boolean;
   openDetail: (id: string) => void;
   closeDetail: () => void;
+  /** Cart lines (FR8, FR9), empty until loaded from storage after mount. */
+  lines: CartLine[];
+  cartOpen: boolean;
+  openCart: () => void;
+  closeCart: () => void;
+  addToCart: (id: string, qty: number) => void;
+  setLineQty: (id: string, qty: number) => void;
+  removeFromCart: (id: string) => void;
+  /** `key` changes on every show, so the same text restarts the toast's timer. */
+  toast: { text: string; key: number } | null;
+  hideToast: () => void;
 };
 
 const StoreContext = createContext<Store | null>(null);
@@ -47,6 +59,35 @@ export default function StoreProvider({
   const browserToday = useSyncExternalStore(subscribe, jakartaToday, () => today);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [lines, setLines] = useState<CartLine[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [toast, setToast] = useState<Store["toast"]>(null);
+
+  // After mount, so the server markup and hydration see an empty cart.
+  useEffect(() => {
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(CART_KEY);
+    } catch {
+      // Storage blocked: the cart lives for this page view only.
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- storage is only readable after hydration
+    setLines(parseCart(saved, new Set(products.map((p) => p.id))));
+  }, [products]);
+
+  // Saved here, not in an effect, so the empty first render never overwrites the stored cart.
+  const save = (next: CartLine[]) => {
+    setLines(next);
+    try {
+      localStorage.setItem(CART_KEY, serializeCart(next));
+    } catch {
+      // Storage blocked: kept in memory.
+    }
+  };
+  // Stable, so the toast's timer effect does not restart on every store render.
+  const hideToast = useCallback(() => setToast(null), []);
+  const showToast = (text: string) => setToast((t) => ({ text, key: (t?.key ?? 0) + 1 }));
+
   const store: Store = {
     products,
     today: browserToday,
@@ -55,8 +96,30 @@ export default function StoreProvider({
     openDetail: (id) => {
       setSelectedId(id);
       setDetailOpen(true);
+      setToast(null);
     },
     closeDetail: () => setDetailOpen(false),
+    lines,
+    cartOpen,
+    openCart: () => {
+      setDetailOpen(false);
+      setCartOpen(true);
+      setToast(null);
+    },
+    closeCart: () => setCartOpen(false),
+    addToCart: (id, qty) => {
+      const next = addLine(lines, id, qty);
+      if (next === "full") return showToast("Keranjang maksimal 20 produk");
+      const before = lines.find((l) => l.id === id)?.qty;
+      // Already at 50: nothing was added, so no "ditambahkan".
+      if (before === next.find((l) => l.id === id)?.qty) return;
+      save(next);
+      showToast(`${products.find((p) => p.id === id)?.name} ditambahkan`);
+    },
+    setLineQty: (id, qty) => save(setQty(lines, id, qty)),
+    removeFromCart: (id) => save(removeLine(lines, id)),
+    toast,
+    hideToast,
   };
   return <StoreContext value={store}>{children}</StoreContext>;
 }

@@ -524,13 +524,18 @@
 }
 
 @media (max-width: 640px) {
-  /* Logo, theme toggle, WhatsApp and the M1.5 cart button must fit 360px (PRD); M1.5 checks it with the real button. */
+  /* Logo, theme toggle, WhatsApp and cart fit 360px (PRD, TR-M1.2-01): with the button's 20px padding the row was
+     6.4px too wide, so the nav WhatsApp button gets 16px (e2e/cart.spec.ts measures it). */
   .wordmark {
     display: none;
   }
 
   .navLinks {
     gap: 8px;
+  }
+
+  .navLinks > a {
+    padding-inline: 16px;
   }
 
   .facts {

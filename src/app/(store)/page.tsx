@@ -1,12 +1,16 @@
 import { unstable_cache } from "next/cache";
 import Image from "next/image";
 import Button from "@/components/Button";
+import CartBar from "@/components/CartBar";
+import CartButton from "@/components/CartButton";
+import CartSheet from "@/components/CartSheet";
 import Menu from "@/components/Menu";
 import OpenPreOrderNotice from "@/components/OpenPreOrderNotice";
 import ProductDetail from "@/components/ProductDetail";
 import PromoCard from "@/components/PromoCard";
 import StoreProvider from "@/components/StoreProvider";
 import ThemeToggle from "@/components/ThemeToggle";
+import Toast from "@/components/Toast";
 import { db } from "@/lib/db";
 import { toStoreProduct } from "@/lib/menu";
 import { jakartaToday, SHOP_WHATSAPP } from "@/lib/order";
@@ -102,6 +106,7 @@ export default async function Home() {
               <Button variant="line" size="nav" href={WHATSAPP}>
                 Pesan via WhatsApp
               </Button>
+              <CartButton />
             </nav>
           </div>
         </header>
@@ -268,6 +273,9 @@ export default async function Home() {
         </footer>
       </div>
       <ProductDetail />
+      <CartSheet />
+      <Toast />
+      <CartBar />
     </StoreProvider>
   );
 }

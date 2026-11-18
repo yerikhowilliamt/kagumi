@@ -13,7 +13,7 @@ import styles from "./ProductDetail.module.css";
 // design.md §6 Product detail (FR6). Rendered once by the page; the store says which product it shows.
 // No media until M3, so the gallery is the placeholder alone, without a thumbnail row (D9).
 export default function ProductDetail() {
-  const { selected: product, detailOpen, closeDetail, today } = useStore();
+  const { selected: product, detailOpen, closeDetail, today, addToCart } = useStore();
   const titleId = useId();
   const [qty, setQty] = useState(1);
   // Every opening starts the stepper at 1.
@@ -62,8 +62,14 @@ export default function ProductDetail() {
           ) : (
             <>
               <QuantityStepper value={qty} min={1} max={MAX_QTY} onChange={setQty} name={product.name} size="lg" />
-              {/* Adds to the cart in M1.5. */}
-              <Button size="md" block>
+              <Button
+                size="md"
+                block
+                onClick={() => {
+                  addToCart(product.id, qty);
+                  closeDetail();
+                }}
+              >
                 Tambah ke keranjang
               </Button>
             </>

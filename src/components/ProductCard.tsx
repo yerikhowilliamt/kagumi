@@ -7,9 +7,10 @@ import { useStore } from "./StoreProvider";
 import Tag from "./Tag";
 import styles from "./ProductCard.module.css";
 
-// design.md §6 Product card. The thumbnail and the name open the detail; the add button adds to the cart in M1.5.
+// design.md §6 Product card. The thumbnail and the name open the detail; the add button adds one to the cart.
 export default function ProductCard({ product, closed }: { product: StoreProduct; closed: boolean }) {
-  const { openDetail } = useStore();
+  const { openDetail, lines, addToCart } = useStore();
+  const inCart = lines.find((l) => l.id === product.id)?.qty;
   return (
     <li className={styles.item}>
       <div className={styles.media}>
@@ -44,8 +45,12 @@ export default function ProductCard({ product, closed }: { product: StoreProduct
       {closed ? (
         <p className={`${styles.add} ${styles.closedNote}`}>Order sudah ditutup</p>
       ) : (
-        <button type="button" className={`${styles.add} ${styles.addButton}`}>
-          + Tambah ke keranjang
+        <button
+          type="button"
+          className={`${styles.add} ${styles.addButton} ${inCart ? styles.inCart : ""}`}
+          onClick={() => addToCart(product.id, 1)}
+        >
+          {inCart ? `✓ Di keranjang (${inCart})` : "+ Tambah ke keranjang"}
         </button>
       )}
     </li>

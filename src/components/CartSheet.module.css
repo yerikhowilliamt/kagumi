@@ -1,0 +1,138 @@
+/* design.md §6 Cart sheet, step 1. The panel itself (side, full width on mobile) is Dialog's `side` variant. */
+
+/* Right padding leaves room for Dialog's ✕ (38px at top 20px, right 20px). */
+.head {
+  flex: none;
+  padding: 20px 74px 20px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.title {
+  font-size: 22px;
+}
+
+.steps {
+  margin-top: 6px;
+  font-family: var(--head);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.steps b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 4px 24px 24px;
+  overflow: auto;
+  list-style: none;
+}
+
+.line {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.thumb {
+  display: block;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+}
+
+.name {
+  font-family: var(--head);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.small {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Text button, 44px-ish hit area. */
+.remove {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.remove::after {
+  content: "";
+  position: absolute;
+  inset: -12px -8px;
+}
+
+.right {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.total {
+  font-family: var(--head);
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.foot {
+  flex: none;
+  padding: 16px 24px calc(16px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+}
+
+.sum {
+  display: flex;
+  justify-content: space-between;
+  margin: 6px 0 2px;
+  font-family: var(--head);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.note {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 72px 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+.burst {
+  width: 64px;
+  height: 64px;
+  background: var(--butter);
+  clip-path: var(--burst);
+}
+
+.emptyTitle {
+  font-family: var(--head);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+}

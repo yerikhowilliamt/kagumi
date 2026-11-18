@@ -1,0 +1,45 @@
+/* design.md §6 Mobile cart bar (≤ 640px), §8 safe area */
+.bar {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .bar {
+    position: fixed;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    left: 12px;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    height: 56px;
+    padding: 0 8px 0 20px;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--blue);
+    color: var(--on-blue);
+    font-family: var(--head);
+    font-size: 15px;
+    font-weight: 500;
+    box-shadow: var(--shadow-cta);
+    cursor: pointer;
+    transition: scale 0.1s ease-out;
+  }
+
+  .bar:active {
+    scale: 0.97;
+  }
+}
+
+.chip {
+  display: grid;
+  place-items: center;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: var(--r-full);
+  background: var(--blue-chip);
+  font-weight: 600;
+  white-space: nowrap;
+}

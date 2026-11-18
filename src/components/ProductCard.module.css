@@ -166,6 +166,14 @@
   border-color: var(--ink);
 }
 
+/* In the cart: --strong / --on-strong (design.md §6 Product card). */
+.inCart,
+.inCart:hover {
+  border-color: var(--strong);
+  background: var(--strong);
+  color: var(--on-strong);
+}
+
 .closedNote {
   border-style: dashed;
   color: var(--muted);
