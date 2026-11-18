@@ -257,6 +257,54 @@ test("cart bar chip: priced only, then nothing priced (approved #4, TR-M1.5-02)"
   await expect(bar(page)).toHaveAccessibleName("Lihat keranjang · 1 item Harga via WA");
 });
 
+// TR-M1.5-08: the bar unmounts when the cart empties, so the sheet has no opener to return focus to.
+for (const how of ["Escape", "Lihat menu"]) {
+  test(`emptying a sheet opened from the cart bar returns focus to the nav cart button (${how})`, async ({ page }, info) => {
+    test.skip(info.project.name !== "mobile-360", "the bar shows at ≤ 640 px only");
+    await open(page);
+    await addFromCard(page, "Hampers Natal", 1);
+    await bar(page).focus();
+    await page.keyboard.press("Enter");
+    await expect(sheet(page)).toBeVisible();
+    await sheet(page).getByRole("button", { name: "Hapus Hampers Natal" }).click();
+    if (how === "Escape") await page.keyboard.press("Escape");
+    else await sheet(page).getByRole("button", { name: "Lihat menu" }).click();
+    await expect(sheet(page)).toBeHidden();
+    await expect(cartButton(page)).toBeFocused();
+  });
+}
+
+// TR-M1.5-09: the browser scrolls a focused control to the viewport edge, under the fixed bar unless padded.
+test("at 360 px no focused control sits under the cart bar", async ({ page }, info) => {
+  test.skip(info.project.name !== "mobile-360", "the bar shows at ≤ 640 px only");
+  await open(page);
+  await addFromCard(page, "Hampers Natal", 1);
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, 0);
+  });
+  const covered = async () =>
+    page.evaluate(() => {
+      const el = document.activeElement as HTMLElement;
+      const bar = [...document.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Lihat keranjang ·"))!;
+      if (!el || el === bar || el === document.body) return null;
+      const a = el.getBoundingClientRect();
+      const b = bar.getBoundingClientRect();
+      const overlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      return overlap > 0 ? `${el.textContent?.trim() || el.getAttribute("aria-label")} (${a.top}–${a.bottom})` : null;
+    });
+  const under: string[] = [];
+  for (let i = 0; i < 30; i++) {
+    await page.keyboard.press("Tab");
+    const hit = await covered();
+    if (hit) under.push(hit);
+  }
+  await page.locator("footer a").last().focus();
+  const hit = await covered();
+  if (hit) under.push(hit);
+  expect(under).toEqual([]);
+});
+
 test("the empty sheet and Lihat menu (K7)", async ({ page }) => {
   await open(page);
   await expect(async () => {

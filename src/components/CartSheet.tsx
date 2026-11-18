@@ -4,6 +4,7 @@ import { useId } from "react";
 import { toOrderLines } from "@/lib/cart";
 import { MAX_QTY, formatRupiah, summarize } from "@/lib/order";
 import Button from "./Button";
+import { CART_BUTTON_ID } from "./CartButton";
 import Dialog from "./Dialog";
 import ProductThumb from "./ProductThumb";
 import QuantityStepper from "./QuantityStepper";
@@ -21,7 +22,20 @@ export default function CartSheet() {
   const { subtotal, unpriced } = summarize(toOrderLines(lines, products));
 
   return (
-    <Dialog open={cartOpen} onClose={closeCart} labelledBy={titleId} variant="side">
+    <Dialog
+      open={cartOpen}
+      onClose={() => {
+        closeCart();
+        // The opener may be gone (the cart bar unmounts when the cart empties): the browser then leaves focus on
+        // <body> or on a control inside the closed sheet ("Lihat menu"), so it goes to the nav cart button (TR-M1.5-08).
+        const focused = document.activeElement;
+        if (!focused || focused === document.body || focused.closest("dialog:not([open])")) {
+          document.getElementById(CART_BUTTON_ID)?.focus();
+        }
+      }}
+      labelledBy={titleId}
+      variant="side"
+    >
       <div className={styles.head}>
         <h2 id={titleId} className={styles.title}>
           Keranjang
