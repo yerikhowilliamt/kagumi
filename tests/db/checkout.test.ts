@@ -1,9 +1,9 @@
 // placeOrder against the development branch (task M1.6 K2–K7), written from the milestone plan
 // (D2 §4.4, D5 §4.5, D7 §4.6) and System Design §4.3. Every checkout runs inside a transaction
-// that is always rolled back; only orders_id_seq moves (W2). The barrier test commits rows under a
-// random key and deletes them in afterAll. The checkout() tests commit (TEC-M1.6-02, approved
-// 2026-11-18): one order, events and rate_limits rows under unique names and keys, plus two products,
-// all deleted in afterAll.
+// that is always rolled back; orders_id_seq still moves (W2). Committed rows, all deleted in afterAll:
+// the barrier test's one rate_limits row under a random key, and from the checkout() tests (TEC-M1.6-02,
+// approved 2026-11-18) one order with its item, status change and event plus three rate_limits rows,
+// under names and keys unique to the run. They use the seeded Kastengel and Nastar and change no product.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { assertDevelopmentDatabase } from "../../prisma/seed.ts";
@@ -368,35 +368,25 @@ describe("hitRateLimit under concurrency (K7)", { timeout: 60_000 }, () => {
 });
 
 describe("checkout() against the database: what commits (BSA-M1.6-02, TEC-M1.6-02)", { timeout: 60_000 }, () => {
+  // The D7 seed fixtures (npx prisma db seed): Kastengel is open and priced, Nastar closed since 2026-11-01.
+  // No product is created or changed, so the storefront never sees test data (TR-M1.6-02).
   const run = randomUUID();
   const secret = `test-secret-${run}`;
   const now = new Date();
-  const today = jakartaToday(now);
-  const yesterday = jakartaToday(new Date(now.getTime() - 86_400_000));
   const ctx = (ua: string) => ({ ip: "203.0.113.7", ua: `kagumi-test ${run} ${ua}`, secret, now });
   const keyOf = (ua: string) => `checkout:${hashVisitor(ctx(ua))}`;
-  const productIds: string[] = [];
   const names = { ok: `Commit Test ${run}`, nul: `Nul Test ${run}` };
 
-  async function committedProduct(name: string, orderDeadline: string | null) {
-    const p = await db.product.create({
-      data: {
-        name,
-        category: "Test",
-        type: orderDeadline ? "PRE_ORDER" : "READY_STOCK",
-        price: 15000,
-        isActive: false, // never shown on the storefront
-        orderDeadline: orderDeadline ? new Date(`${orderDeadline}T00:00:00Z`) : null,
-      },
-    });
-    productIds.push(p.id);
+  async function seeded(name: string) {
+    const p = await db.product.findFirst({ where: { name, isActive: true } });
+    if (!p) throw new Error(`seed product ${name} is missing: run npx prisma db seed`);
     return p;
   }
   const input = (name: string, productId: string) => ({
     customerName: name,
     customerPhone: "081200000000",
     fulfillment: "PICKUP",
-    requestedDate: today,
+    requestedDate: jakartaToday(now),
     items: [{ productId, quantity: 1 }],
   });
 
@@ -405,15 +395,11 @@ describe("checkout() against the database: what commits (BSA-M1.6-02, TEC-M1.6-0
     await db.order.deleteMany({ where: { customerName: { in: [names.ok, names.nul] } } });
     await db.event.deleteMany({ where: { visitorHash: { in: hashes } } });
     await db.rateLimit.deleteMany({ where: { key: { in: hashes.map((h) => `checkout:${h}`) } } });
-    await db.product.deleteMany({ where: { id: { in: productIds } } });
   });
 
   it("commits the order, the event and the counter with the default transaction options", async () => {
-    // Inactive products are rejected, so the open product is active only for this test's checkout.
-    const p = await committedProduct(`Test Commit ${run}`, null);
-    await db.product.update({ where: { id: p.id }, data: { isActive: true } });
-    const result = await checkout(db, input(names.ok, p.id), ctx("ok"));
-    await db.product.update({ where: { id: p.id }, data: { isActive: false } });
+    const kastengel = await seeded("Kastengel");
+    const result = await checkout(db, input(names.ok, kastengel.id), ctx("ok"));
     expect(result).toMatchObject({ ok: true });
     const order = await db.order.findFirst({ where: { customerName: names.ok }, include: { items: true, statusChanges: true } });
     expect(order?.items).toHaveLength(1);
@@ -423,11 +409,9 @@ describe("checkout() against the database: what commits (BSA-M1.6-02, TEC-M1.6-0
   });
 
   it("keeps the counter when the cart is rejected", async () => {
-    const p = await committedProduct(`Test Closed ${run}`, yesterday);
-    await db.product.update({ where: { id: p.id }, data: { isActive: true } });
-    const result = await checkout(db, input(names.ok, p.id), ctx("rejected"));
-    await db.product.update({ where: { id: p.id }, data: { isActive: false } });
-    expect(result).toEqual({ ok: false, error: "rejected", lines: [{ productId: p.id, reason: "closed" }] });
+    const nastar = await seeded("Nastar");
+    const result = await checkout(db, input(names.ok, nastar.id), ctx("rejected"));
+    expect(result).toEqual({ ok: false, error: "rejected", lines: [{ productId: nastar.id, reason: "closed" }] });
     expect((await db.rateLimit.findMany({ where: { key: keyOf("rejected") } })).map((r) => r.count)).toEqual([1]);
   });
 
@@ -440,12 +424,10 @@ describe("checkout() against the database: what commits (BSA-M1.6-02, TEC-M1.6-0
   });
 
   it("rolls back everything, the counter included, when a write throws (U+0000 in the name)", async () => {
-    const p = await committedProduct(`Test Nul ${run}`, null);
-    await db.product.update({ where: { id: p.id }, data: { isActive: true } });
+    const kastengel = await seeded("Kastengel");
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const result = await checkout(db, input(`${names.nul}\u0000`, p.id), ctx("nul"));
+    const result = await checkout(db, input(`${names.nul}\u0000`, kastengel.id), ctx("nul"));
     spy.mockRestore();
-    await db.product.update({ where: { id: p.id }, data: { isActive: false } });
     expect(result).toEqual({ ok: false, error: "server" });
     expect(await db.order.count({ where: { customerName: { startsWith: names.nul } } })).toBe(0);
     expect(await db.event.count({ where: { visitorHash: hashVisitor(ctx("nul")) } })).toBe(0);

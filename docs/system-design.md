@@ -252,17 +252,23 @@ sequenceDiagram
   participant D as Neon
   participant W as WhatsApp
   C->>N: createOrder(cart, form)
-  N->>N: Zod validate + rate limit
-  N->>D: load products (active, not closed)
-  alt invalid / closed product
-    N-->>C: error per line → show in cart
+  N->>D: BEGIN (one interactive transaction, §4.3)
+  N->>N: Zod validate
+  alt invalid input
+    N-->>C: validation: one message per field (nothing written)
+  else 6th checkout of this visitor in the 10-minute window
+    N->>D: rate-limit upsert (count + 1); COMMIT
+    N-->>C: rate_limited (only the counter is saved)
+  else a line missing, hidden or past its deadline
+    N->>D: rate-limit upsert; load products; COMMIT
+    N-->>C: rejected: every bad line → show in cart (only the counter is saved)
   else ok
-    N->>D: BEGIN; insert order + items + status change + checkout event; COMMIT
+    N->>D: rate-limit upsert; load products; insert order + items + status change + checkout event; COMMIT
     N-->>C: { orderNumber, waUrl }
     C->>C: clear cart, show confirmation
     C->>W: location.href = waUrl
   end
-  Note over C,W: If the action fails: build message locally (no number) and open WhatsApp anyway
+  Note over C,W: Any throw rolls everything back and returns server. If the action fails: build message locally (no number) and open WhatsApp anyway
 ```
 
 ### 5.2 Admin edits a product with a new photo

@@ -93,7 +93,7 @@ Every script in `package.json`:
 | `npm run start` | `next start` | Serves the output of `npm run build` |
 | `npm run lint` | `eslint .` | Lint. `src/generated/` and `.vercel/` are ignored |
 | `npm run typecheck` | `next typegen && tsc --noEmit` | Generates Next.js route types, then type-checks |
-| `npm test` | `vitest run` | All Vitest tests, **including `tests/db`**, which connect to the development branch and write inside transactions that are always rolled back. Files run one at a time (`fileParallelism: false`). `tests/db/checkout.test.ts` inserts orders in rolled-back transactions, so each run moves `orders_id_seq` by about 15 (a rollback does not undo `nextval()`), and its concurrency test commits two `rate_limits` rows under a random `test:barrier:` key and deletes them at the end |
+| `npm test` | `vitest run` | All Vitest tests, **including `tests/db`**, which connect to the development branch and write inside transactions that are always rolled back. Files run one at a time (`fileParallelism: false`). `tests/db/checkout.test.ts` inserts most orders in rolled-back transactions, and each run moves `orders_id_seq` by about 12 (a rollback does not undo `nextval()`). It also commits rows and deletes them at the end: one `rate_limits` row of its concurrency test (random `test:barrier:` key), and from its `checkout()` tests one order with its item, status change and `CHECKOUT` event plus three `rate_limits` rows, under names and keys unique to the run. Those tests need the seeded Kastengel and Nastar (§4) and change no product |
 | `npm run test:unit` | `vitest run --exclude 'tests/db/**'` | Vitest tests that need no database |
 | `npm run test:e2e` | `playwright test` | Playwright tests in `e2e/` at 360 px and desktop width. Starts `npm run dev` itself unless `PLAYWRIGHT_BASE_URL` is set. The home page reads its products from the development branch (cached by the dev server, §2), and `e2e/storefront.spec.ts` and `e2e/menu.spec.ts` expect the nine products of the seed (§4) in `sortOrder`, and `e2e/detail.spec.ts` its names, prices and descriptions, and `e2e/cart.spec.ts` Hampers Natal as a pre-order at Rp35.000 with the deadline 2026-12-10 and Soft Cookies as ready stock without a price |
 | `npm run vercel-build` | `prisma migrate deploy && next build` | **Run by Vercel only**, instead of `build`. Applies pending migrations to the branch of that Vercel environment, then builds. Never run it locally |
@@ -197,6 +197,7 @@ Vercel Cron runs only on the production deployment, so scheduled jobs never touc
 src/
   app/               App Router: layout.tsx (fonts, theme script), icons
     (store)/page.tsx The storefront home page: static, products cached with the tag `products`
+    (store)/actions.ts  "use server": createOrder, its only export (every export of this file is a public endpoint)
     fonts/           Self-hosted Switzer font files
   components/        Shared components with their CSS Modules
   lib/
@@ -205,6 +206,8 @@ src/
     validation.ts    Checkout schema and phone normalization (zod)
     menu.ts          Storefront product types, the row mapper and the menu rules: sort, filter, open pre-order, promo product (imports only ./order)
     cart.ts          The cart in localStorage['kagumi-cart']: load rules, add, set, remove (imports only ./order and a type from ./menu)
+    tracking.ts      Server only (node:crypto): request IP and user agent, the visitor hash, the rate-limit upsert
+    checkout.ts      Server only: placeOrder (the checkout transaction) and checkout (maps any throw to "server"); exports the CreateOrderResult type
   styles/tokens.css  Every design token, light and dark, and the global base rules
   generated/prisma/  Generated Prisma client (git-ignored, written by prisma generate)
 prisma/
