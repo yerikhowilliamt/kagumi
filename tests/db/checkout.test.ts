@@ -30,7 +30,7 @@ async function rolledBack<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
         out = await fn(tx);
         throw ROLLBACK;
       },
-      { timeout: 30_000 },
+      { maxWait: 10_000, timeout: 30_000 },
     ),
   ).rejects.toBe(ROLLBACK);
   return out as T;
@@ -336,7 +336,7 @@ describe("hitRateLimit under concurrency (K7)", { timeout: 60_000 }, () => {
         signalA();
         await gateA;
       },
-      { timeout: 30_000 },
+      { maxWait: 10_000, timeout: 30_000 },
     );
     await aIncremented;
     const b = db.$transaction(
@@ -345,7 +345,7 @@ describe("hitRateLimit under concurrency (K7)", { timeout: 60_000 }, () => {
         signalB();
         return hitRateLimit(tx, key, NOW, 100);
       },
-      { timeout: 30_000 },
+      { maxWait: 10_000, timeout: 30_000 },
     );
 
     // Barrier: B's own backend is blocked by A's backend (the row lock) before A commits (TEC-M1.6-03).

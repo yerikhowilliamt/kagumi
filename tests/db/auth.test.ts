@@ -35,7 +35,8 @@ async function rolledBack(fn: (tx: Tx) => Promise<void>) {
         await fn(tx);
         throw ROLLBACK;
       },
-      { timeout: 30_000 },
+      // maxWait: opening a Neon connection can take longer than Prisma's 2 s default (P2028, ERR-003).
+      { maxWait: 10_000, timeout: 30_000 },
     ),
   ).rejects.toBe(ROLLBACK);
 }
@@ -196,7 +197,7 @@ describe("attemptLogin under concurrency (K5, D9.2)", { timeout: 60_000 }, () =>
         signalA();
         await gateA;
       },
-      { timeout: 30_000 },
+      { maxWait: 10_000, timeout: 30_000 },
     );
     await aReserved;
     const b = db.$transaction(
@@ -205,7 +206,7 @@ describe("attemptLogin under concurrency (K5, D9.2)", { timeout: 60_000 }, () =>
         signalB();
         return attemptLogin(tx, { email, password: WRONG, now: new Date() });
       },
-      { timeout: 30_000 },
+      { maxWait: 10_000, timeout: 30_000 },
     );
 
     // Barrier: B's backend is blocked by A's backend (the row lock) before A commits.
@@ -247,7 +248,7 @@ describe("attemptLogin under concurrency (K5, D9.2)", { timeout: 60_000 }, () =>
         await gateA;
         return result;
       },
-      { timeout: 30_000 },
+      { maxWait: 10_000, timeout: 30_000 },
     );
     await aReserved;
     const b = db.$transaction(
@@ -256,7 +257,7 @@ describe("attemptLogin under concurrency (K5, D9.2)", { timeout: 60_000 }, () =>
         signalB();
         return attemptLogin(tx, { email, password: RIGHT, now });
       },
-      { timeout: 30_000 },
+      { maxWait: 10_000, timeout: 30_000 },
     );
 
     await bStarted;
