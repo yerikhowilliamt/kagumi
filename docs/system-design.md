@@ -84,7 +84,8 @@ src/
   components/                   UI built from design.md tokens (CSS Modules)
   lib/
     db.ts                       Prisma client (Neon adapter)
-    auth.ts                     hashing, sessions, lockout, requireAdmin()
+    auth.ts                     login attempts and lockout, sessions, getAdmin(), requireAdmin() (server only)
+    password.ts                 scrypt hashing and verification, normalizeEmail (imports only node:crypto, so scripts/ can load it)
     cloudinary.ts               sign upload, verify response, destroy, delivery URLs
     tracking.ts                 visitor hash, bot filter, rate limit (server only)
     checkout.ts                 the checkout transaction behind createOrder (server only)
@@ -167,11 +168,12 @@ Steps 1–4 run in one interactive transaction, in this order: validation (inval
 | Concern | Design |
 |---|---|
 | Account | One row in `admin_users`, created or reset by `scripts/create-admin.ts` from `ADMIN_EMAIL` / `ADMIN_PASSWORD`. No sign-up route |
-| Password hash | `crypto.scrypt` (N=16384, r=8, p=1, 64-byte key) with a 16-byte random salt, stored as `scrypt$N$r$p$salt$hash` so the parameters can be raised later |
-| Session | 32-byte `crypto.randomBytes` token sent in the cookie. The DB stores only `sha256(token)`, so a DB leak doesn't expose live sessions. Expires after 7 days, renewed when less than 1 day remains |
-| Cookie | `kd_session`, `HttpOnly; Secure; SameSite=Lax; Path=/` |
-| Lockout | `failed_attempts` and `locked_until` on `admin_users`. 5 failures → locked for 15 minutes. A successful login resets them |
-| Timing | Unknown email still runs scrypt against a dummy hash. Comparisons use `crypto.timingSafeEqual`. One generic error message for every failure |
+| Account script | `node scripts/create-admin.ts` loads `.env`, refuses any database but the development branch (the seed's guard), then imports the Prisma client. Input: `ADMIN_EMAIL` trimmed and lowercased, exactly one `@`, at most 254 characters; `ADMIN_PASSWORD` 12–1024 characters. In one transaction it inserts the admin, or updates it by email (new hash, `failed_attempts = 0`, `locked_until = NULL`) and deletes that admin's sessions; other admin rows are untouched. Prints exactly `admin account created` or `admin account reset`, never the email, password or hash; a broken rule exits 1 with a message naming the rule, not the value |
+| Password hash | `crypto.scrypt` (N=16384, r=8, p=1, 64-byte key) with a 16-byte random salt, stored as `scrypt$N$r$p$salt$hash` so the parameters can be raised later: `scrypt$16384$8$1$<salt: 32 hex>$<key: 128 hex>` (178 characters). Verification reads N, r, p from the stored string; a malformed string verifies as false without throwing (`lib/password.ts`) |
+| Session | 32-byte `crypto.randomBytes` token sent in the cookie as base64url (43 characters). The DB stores only `sha256(token)` as 64 hex characters, so a DB leak doesn't expose live sessions. Created at login with `expires_at = now + 7 days` (other sessions of the admin are left alone). Looked up by the hash with `expires_at > now`; an expired row counts as no session and is left for the cron. When less than 1 day remains, the lookup sets `expires_at = now + 7 days`; the cookie is unchanged |
+| Cookie | `kd_session`, `HttpOnly; Secure; SameSite=Lax; Path=/`, with no `Max-Age` or `Expires`: `sessions.expires_at` is the only clock, because a Server Component can't reissue a cookie when the session is renewed |
+| Lockout | `failed_attempts` and `locked_until` on `admin_users`. 5 failures → locked for 15 minutes. A successful login resets them. Each attempt first runs one atomic `UPDATE … RETURNING` on an unlocked account (`locked_until IS NULL OR locked_until <= now`) that adds 1 to the counter, or on the fifth sets `locked_until = now + 15 min` and the counter back to 0; concurrent attempts are serialized by the row lock, so at most 5 passwords are checked per lock window. While locked, attempts are refused even with the right password, aren't counted and don't extend the lock. Unknown emails are counted nowhere. Empty or over-1024-character passwords fail before any query |
+| Timing | Exactly one scrypt per attempt: unknown email and locked account run it against a dummy hash (computed once per process). Comparisons use `crypto.timingSafeEqual`. One generic error message for every failure |
 | Enforcement | `requireAdmin()` is called at the top of the protected layout **and** inside every admin Server Action and Route Handler (FR21). Middleware/proxy only redirects unauthenticated page visits to `/admin/login` for convenience and is never the security boundary |
 | CSRF | Server Actions only accept same-origin POSTs (Next.js checks `Origin`), plus `SameSite=Lax`. No custom token needed |
 | Logout | Deletes the session row and clears the cookie |

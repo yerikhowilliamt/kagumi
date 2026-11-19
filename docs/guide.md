@@ -61,6 +61,14 @@ Copy `.env.example` to `.env` (git-ignored). The project owner supplies the valu
 | `DIRECT_URL` | Direct (unpooled) connection string of the development branch. Used by the Prisma CLI |
 | `DEV_DATABASE_HOST` | The direct host of the development branch (§4). The seed and `tests/db` refuse to run when `DATABASE_URL` points at any other host |
 | `TRACKING_SECRET` | Secret of the daily salt of the visitor hash (`src/lib/tracking.ts`), used by `createOrder` for the checkout rate limit. The project owner generates it (for example `openssl rand -hex 32`) and enters it; nobody else reads it. Without it every checkout returns the `server` result. The Vitest tests pass their own fake secret and don't need it |
+| `ADMIN_EMAIL` | Email of your development admin account. Read only by `node scripts/create-admin.ts` (§4) |
+| `ADMIN_PASSWORD` | Password of that account, 12 to 1024 characters. Read only by `node scripts/create-admin.ts`; never printed. Never set either variable for production |
+
+To check that both admin variables are set without printing them:
+
+```sh
+node -e "process.loadEnvFile(); console.log(['ADMIN_EMAIL','ADMIN_PASSWORD'].map(k => k + (process.env[k] ? ' set' : ' missing')).join(', '))"
+```
 
 `npm run build`, `npm run dev`, `npm test` and `npm run test:e2e` all need `.env`. Without `DATABASE_URL` the build fails with `DATABASE_URL is not set`, because the home page imports `src/lib/db.ts`.
 
@@ -93,7 +101,7 @@ Every script in `package.json`:
 | `npm run start` | `next start` | Serves the output of `npm run build` |
 | `npm run lint` | `eslint .` | Lint. `src/generated/` and `.vercel/` are ignored |
 | `npm run typecheck` | `next typegen && tsc --noEmit` | Generates Next.js route types, then type-checks |
-| `npm test` | `vitest run` | All Vitest tests, **including `tests/db`**, which connect to the development branch and write inside transactions that are always rolled back. Files run one at a time (`fileParallelism: false`). `tests/db/checkout.test.ts` inserts most orders in rolled-back transactions, and each run moves `orders_id_seq` by about 12 (a rollback does not undo `nextval()`). It also commits rows and deletes them at the end: one `rate_limits` row of its concurrency test (random `test:barrier:` key), and from its `checkout()` tests one order with its item, status change and `CHECKOUT` event plus three `rate_limits` rows, under names and keys unique to the run. Those tests need the seeded Kastengel and Nastar (§4) and change no product |
+| `npm test` | `vitest run` | All Vitest tests, **including `tests/db`**, which connect to the development branch and write inside transactions that are always rolled back. Files run one at a time (`fileParallelism: false`). `tests/db/checkout.test.ts` inserts most orders in rolled-back transactions, and each run moves `orders_id_seq` by about 12 (a rollback does not undo `nextval()`). It also commits rows and deletes them at the end: one `rate_limits` row of its concurrency test (random `test:barrier:` key), and from its `checkout()` tests one order with its item, status change and `CHECKOUT` event plus three `rate_limits` rows, under names and keys unique to the run. Those tests need the seeded Kastengel and Nastar (§4) and change no product. `tests/db/auth.test.ts` runs its logins, sessions and admin resets in rolled-back transactions; its concurrency test commits one admin under a random `test-…@kagumi.test` email and deletes it at the end (its sessions go with it) |
 | `npm run test:unit` | `vitest run --exclude 'tests/db/**'` | Vitest tests that need no database |
 | `npm run test:e2e` | `playwright test` | Playwright tests in `e2e/` at 360 px and desktop width. Starts `npm run dev` itself unless `PLAYWRIGHT_BASE_URL` is set. The home page reads its products from the development branch (cached by the dev server, §2), and `e2e/storefront.spec.ts` and `e2e/menu.spec.ts` expect the nine products of the seed (§4) in `sortOrder`, and `e2e/detail.spec.ts` its names, prices and descriptions, and `e2e/cart.spec.ts` Hampers Natal as a pre-order at Rp35.000 with the deadline 2026-12-10 and Soft Cookies as ready stock without a price. **`e2e/checkout.spec.ts` writes orders to the development branch:** per run one order per project from its happy path and five from its rate-limit test (desktop only), each with its item, status change, `CHECKOUT` event and `rate_limits` row, under the customer name "E2E Playwright" and a fake number. Nothing is deleted. It needs `TRACKING_SECRET` in `.env` (without it every checkout returns `server`) and the seeded Kastengel, Bolu Gulung and Nastar. Every test is its own visitor (a user agent unique to the test and run), and `wa.me` is intercepted, so no message reaches the shop. **Never run `npm run test:e2e` against a deployed URL:** with `PLAYWRIGHT_BASE_URL` set only `e2e/theme.spec.ts` may run; `e2e/checkout.spec.ts` throws at load when the variable is set |
 | `npm run vercel-build` | `prisma migrate deploy && next build` | **Run by Vercel only**, instead of `build`. Applies pending migrations to the branch of that Vercel environment, then builds. Never run it locally |
@@ -107,11 +115,12 @@ npm run typecheck
 npm test
 ```
 
-Other commands run during M0:
+Other commands:
 
 | Command | Purpose |
 | --- | --- |
 | `npx vitest run tests/db` | Only the database tests |
+| `node scripts/create-admin.ts` | Creates or resets the development admin account from `ADMIN_EMAIL` and `ADMIN_PASSWORD` (§4) |
 | `PLAYWRIGHT_BASE_URL=https://kagumi-dough.vercel.app npx playwright test e2e/theme.spec.ts` | The theme tests against production, with no local server. Writes nothing while the storefront has no `/api/t` beacons. Once beacons exist, each run records `page_view` events in production |
 
 ## 4. Database
@@ -164,6 +173,14 @@ This runs `node prisma/seed.ts` (configured in `prisma.config.ts`). It inserts e
 
 After seeding, the dev server may still serve the old product list from `.next/dev/cache` (§2) for up to an hour. Empty that folder before `npm run test:e2e` so the page reads the new list.
 
+### Admin account
+
+```sh
+node scripts/create-admin.ts
+```
+
+Run the host check (§2) first. The script loads `.env`, refuses to run unless `DATABASE_URL` is the development branch (the seed's guard), and then, in one transaction, inserts the admin from `ADMIN_EMAIL` and `ADMIN_PASSWORD` (§2) or, when that email exists, replaces its password hash, clears its lockout and deletes its sessions. Other admin rows are untouched. It prints exactly `admin account created` or `admin account reset`, never the email or the password. A broken rule (an email without exactly one `@` or longer than 254 characters, a password under 12 or over 1024 characters) exits with code 1 and a message naming the rule. Never run it against production; how the production account is created is decided in M5.
+
 ### Schema test
 
 `tests/db/schema.test.ts` compares the database catalog (tables, enums, columns, CHECK constraints, indexes, foreign keys) with the ERD, and checks constraint behavior in transactions that always roll back. It runs as part of `npm test`, uses the same `DEV_DATABASE_HOST` guard as the seed, and connects through `src/lib/db.ts`.
@@ -211,12 +228,16 @@ src/
     cart.ts          The cart in localStorage['kagumi-cart']: load rules, add, set, remove (imports only ./order and a type from ./menu)
     tracking.ts      Server only (node:crypto): request IP and user agent, the visitor hash, the rate-limit upsert
     checkout.ts      Server only: placeOrder (the checkout transaction) and checkout (maps any throw to "server"); exports the CreateOrderResult type
+    password.ts      Server only: scrypt hashing and verification, the dummy verification, normalizeEmail (imports only node:crypto)
+    auth.ts          Server only: login attempts with the lockout, sessions, getAdmin and requireAdmin
   styles/tokens.css  Every design token, light and dark, and the global base rules
   generated/prisma/  Generated Prisma client (git-ignored, written by prisma generate)
 prisma/
   schema.prisma      Data model (matches docs/erd.md)
   migrations/        SQL migrations, including raw-SQL CHECK constraints and the partial index
   seed.ts            Development seed with the development-host guard
+scripts/
+  create-admin.ts    Creates or resets the development admin account (§4), with the seed's guard
 tests/               Vitest tests; tests/db/ needs the development branch
 e2e/                 Playwright tests
 public/images/       Brand images
