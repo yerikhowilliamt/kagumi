@@ -3,11 +3,15 @@ import {
   SHOP_WHATSAPP,
   buildOrderMessage,
   formatDateLong,
+  formatDateMedium,
   formatDateShort,
   formatJakartaTime,
   formatOrderNumber,
   formatRupiah,
+  formatSubtotal,
+  formatWhen,
   isClosed,
+  itemTotals,
   jakartaToday,
   summarize,
   whatsappUrl,
@@ -330,5 +334,69 @@ describe("whatsappUrl (D1)", () => {
       });
       expect(() => whatsappUrl(buildOrderMessage({ lines: LINES, customer: parsed }))).not.toThrow();
     }
+  });
+});
+
+// M2.4 K5, K6 (M2 plan D16, X5): the order list formats, in WIB (M1-D23).
+describe("formatWhen (M2.4 K6, D16)", () => {
+  const now = new Date("2026-11-19T17:30:00Z"); // 00.30 WIB on 20 Nov 2026
+  it.each([
+    ["2026-11-19T17:00:00Z", "Hari ini, 00.00"], // WIB 20 Nov, though UTC is still 19 Nov
+    ["2026-11-19T16:59:00Z", "Kemarin, 23.59"], // WIB 19 Nov, across 17:00 UTC
+    ["2026-11-18T17:00:00Z", "Kemarin, 00.00"],
+    ["2026-11-18T16:59:00Z", "18 Nov, 23.59"], // two WIB days back
+    ["2026-11-12T09:10:00Z", "12 Nov, 16.10"],
+    ["2026-01-01T00:00:00Z", "1 Jan, 07.00"],
+    ["2025-11-12T09:10:00Z", "12 Nov 2025, 16.10"],
+    ["2025-12-31T16:59:00Z", "31 Des 2025, 23.59"], // WIB 31 Dec 2025: another year
+  ])("%s → %s", (instant, expected) => {
+    expect(formatWhen(new Date(instant), now)).toBe(expected);
+  });
+
+  it("is 'Kemarin' across a year boundary", () => {
+    expect(formatWhen(new Date("2026-12-31T10:00:00Z"), new Date("2027-01-01T03:00:00Z"))).toBe("Kemarin, 17.00");
+  });
+});
+
+describe("formatDateMedium (M2.4 K6)", () => {
+  it.each([
+    ["2026-12-20", "20 Des 2026"],
+    ["2027-01-05", "5 Jan 2027"],
+  ])("%s → %s", (ymd, expected) => {
+    expect(formatDateMedium(ymd)).toBe(expected);
+  });
+});
+
+describe("itemTotals and formatSubtotal (M2.4 K5, X5)", () => {
+  it("counts quantities, not lines, and sums only priced lines", () => {
+    expect(
+      itemTotals([
+        { unitPrice: 85_000, quantity: 2 },
+        { unitPrice: null, quantity: 1 },
+      ]),
+    ).toEqual({ quantity: 3, subtotal: 170_000, unpriced: 1 });
+  });
+
+  it("all priced → Rp…; some unpriced → Rp…+; none priced → —", () => {
+    expect(formatSubtotal(itemTotals([{ unitPrice: 35_000, quantity: 2 }]))).toBe("Rp70.000");
+    expect(
+      formatSubtotal(
+        itemTotals([
+          { unitPrice: 35_000, quantity: 1 },
+          { unitPrice: null, quantity: 3 },
+        ]),
+      ),
+    ).toBe("Rp35.000+");
+    expect(formatSubtotal(itemTotals([{ unitPrice: null, quantity: 2 }]))).toBe("—");
+    expect(formatSubtotal(itemTotals([]))).toBe("—");
+  });
+
+  it("keeps money an integer", () => {
+    const { subtotal } = itemTotals([
+      { unitPrice: 33_333, quantity: 3 },
+      { unitPrice: 1, quantity: 50 },
+    ]);
+    expect(subtotal).toBe(100_049);
+    expect(Number.isInteger(subtotal)).toBe(true);
   });
 });

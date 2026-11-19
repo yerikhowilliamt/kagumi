@@ -1,0 +1,37 @@
+/* design.md §5 Order status badge: pill 26px, 6px dot in currentColor, pastel background, --on-accent text. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--r-full);
+  color: var(--on-accent);
+  font: 500 12px var(--head);
+  white-space: nowrap;
+}
+
+.badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.NEW {
+  background: var(--sky);
+}
+
+.CONFIRMED {
+  background: var(--butter);
+}
+
+.COMPLETED {
+  background: var(--mint);
+}
+
+.CANCELLED {
+  background: var(--pink);
+}

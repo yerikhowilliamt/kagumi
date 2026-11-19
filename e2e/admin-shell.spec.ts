@@ -135,7 +135,7 @@ test("Tab reaches every nav item and Keluar with a visible focus ring (K6)", asy
     ? ["Pesanan", TOGGLE, "Lihat website", "Keluar"]
     : [TOGGLE, "Keluar", "Pesanan"];
   const reached = new Set<string>();
-  for (let i = 0; i < 30 && reached.size < targets.length; i += 1) {
+  for (let i = 0; i < 120 && reached.size < targets.length; i += 1) {
     await page.keyboard.press("Tab");
     const focused = await page.evaluate(() => {
       const el = document.activeElement as HTMLElement | null;

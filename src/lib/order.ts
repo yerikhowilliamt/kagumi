@@ -62,6 +62,40 @@ export function formatDateShort(ymd: string) {
   return `${day} ${MONTHS_SHORT[month - 1]}`;
 }
 
+/** "2026-12-20" → "20 Des 2026" */
+export function formatDateMedium(ymd: string) {
+  const [year, month, day] = ymd.split("-").map(Number);
+  return `${day} ${MONTHS_SHORT[month - 1]} ${year}`;
+}
+
+/** When an order came in, in WIB (M2 plan D16): "Hari ini, 14.20", "Kemarin, 19.42", "12 Nov, 16.10", "12 Nov 2025, 16.10". */
+export function formatWhen(instant: Date, now: Date) {
+  const day = jakartaToday(instant);
+  const today = jakartaToday(now);
+  const yesterday = jakartaToday(new Date(now.getTime() - 86_400_000));
+  const time = formatJakartaTime(instant);
+  if (day === today) return `Hari ini, ${time}`;
+  if (day === yesterday) return `Kemarin, ${time}`;
+  return `${day.slice(0, 4) === today.slice(0, 4) ? formatDateShort(day) : formatDateMedium(day)}, ${time}`;
+}
+
+/** An order's item count (sum of quantities, X5), the subtotal of its priced lines, and the quantity without a price. */
+export function itemTotals(lines: { unitPrice: number | null; quantity: number }[]) {
+  let quantity = 0;
+  let subtotal = 0;
+  let unpriced = 0;
+  for (const line of lines) {
+    quantity += line.quantity;
+    if (line.unitPrice === null) unpriced += line.quantity;
+    else subtotal += line.unitPrice * line.quantity;
+  }
+  return { quantity, subtotal, unpriced };
+}
+
+/** "Rp70.000" when every item is priced, "Rp35.000+" when some are not, "—" when none are. */
+export const formatSubtotal = ({ quantity, subtotal, unpriced }: ReturnType<typeof itemTotals>) =>
+  unpriced === quantity ? "—" : `${formatRupiah(subtotal)}${unpriced > 0 ? "+" : ""}`;
+
 /** Subtotal of the priced lines, and how many lines have no price. */
 export function summarize(lines: OrderLine[]) {
   let subtotal = 0;
