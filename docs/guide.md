@@ -218,14 +218,16 @@ src/
     admin/actions.ts "use server": login (public) and logout
     admin/login/     The login page and its form
     admin/(protected)/  Every admin page behind the session: the layout, /admin (redirects to /admin/pesanan) and pesanan/. The layout and each page call requireAdmin()
+                     The layout is the design.md §7 shell (sidebar, mobile top bar and bottom nav) with the status bar
     fonts/           Self-hosted Switzer font files
   components/        Shared components with their CSS Modules. Storefront: StoreProvider (products, WIB date, cart state),
                      Menu, OpenPreOrderNotice, ProductCard, ProductThumb, PromoCard, ProductDetail, Dialog, QuantityStepper, Tag, Toast, CartButton,
                      CartBar, CartSheet (steps cart → form → result), CheckoutForm (calls createOrder), OrderResult (the
                      WhatsApp bubble: the only module with the design.md §2.7 colors), Field, SegmentedControl, Button, ThemeToggle
+                     (label prop: the admin sidebar item). Admin: AdminNav (sidebar and bottom-nav items, the NEW count pill)
   lib/
     db.ts            The Prisma client on the pooled URL through @prisma/adapter-neon
-    order.ts         Order number, rupiah, WIB dates, the WhatsApp message and URL, the cart limits (no imports)
+    order.ts         Order number, rupiah, WIB dates and times, the WhatsApp message and URL, the cart limits (no imports)
     validation.ts    Checkout schema and phone normalization (zod)
     menu.ts          Storefront product types, the row mapper and the menu rules: sort, filter, open pre-order, promo product (imports only ./order)
     cart.ts          The cart in localStorage['kagumi-cart']: load rules, add, set, remove (imports only ./order and a type from ./menu)
@@ -233,6 +235,7 @@ src/
     checkout.ts      Server only: placeOrder (the checkout transaction) and checkout (maps any throw to "server"); exports the CreateOrderResult type
     password.ts      Server only: scrypt hashing and verification, the dummy verification, normalizeEmail (imports only node:crypto)
     auth.ts          Server only: login attempts with the lockout, sessions, getAdmin and requireAdmin
+    orders.ts        Server only: admin order queries; statusBarCounts (new orders, open pre-orders) takes the client
   styles/tokens.css  Every design token, light and dark, and the global base rules
   generated/prisma/  Generated Prisma client (git-ignored, written by prisma generate)
 prisma/

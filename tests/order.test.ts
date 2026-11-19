@@ -4,6 +4,7 @@ import {
   buildOrderMessage,
   formatDateLong,
   formatDateShort,
+  formatJakartaTime,
   formatOrderNumber,
   formatRupiah,
   isClosed,
@@ -90,6 +91,16 @@ describe("jakartaToday (D23: WIB = UTC + 7 h)", () => {
       if (saved === undefined) delete process.env.TZ;
       else process.env.TZ = saved;
     }
+  });
+});
+
+describe("formatJakartaTime (M2.3 K4, D17: WIB = UTC + 7 h)", () => {
+  it.each([
+    ["2026-11-19T07:32:00Z", "14.32"],
+    ["2026-11-19T16:59:00Z", "23.59"],
+    ["2026-11-19T17:00:00Z", "00.00"],
+  ])("%s → %s", (instant, expected) => {
+    expect(formatJakartaTime(new Date(instant))).toBe(expected);
   });
 });
 

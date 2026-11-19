@@ -43,6 +43,10 @@ export const formatRupiah = (amount: number) => `Rp${String(amount).replace(/\B(
 export const jakartaToday = (now: Date = new Date()) =>
   new Date(now.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
 
+/** The WIB clock time of an instant as "14.32" (M1-D23). */
+export const formatJakartaTime = (instant: Date) =>
+  new Date(instant.getTime() + 7 * 3_600_000).toISOString().slice(11, 16).replace(":", ".");
+
 /** `deadline` ("YYYY-MM-DD" or null) is the last day orders are accepted, so that day is still open. */
 export const isClosed = (deadline: string | null, today: string) => deadline !== null && deadline < today;
 

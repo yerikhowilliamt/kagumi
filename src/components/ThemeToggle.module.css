@@ -30,7 +30,32 @@
   scale: 0.97;
 }
 
-.toggle svg {
+/* The labeled form: an admin sidebar item (design.md §7 Shell, 42px, r-md, icon 18px + label). */
+.labeled {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--muted);
+  font: 500 14px var(--head);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.labeled:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.toggle svg,
+.labeled svg {
+  flex: none;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
