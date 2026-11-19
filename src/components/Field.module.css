@@ -27,6 +27,11 @@
     box-shadow 0.2s ease;
 }
 
+/* Admin inputs: 44px (design.md §5 Inputs, M2 plan D22) */
+.admin {
+  height: 44px;
+}
+
 textarea.input {
   height: auto;
   min-height: 88px;

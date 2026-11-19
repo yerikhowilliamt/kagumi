@@ -4,6 +4,8 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3000";
 
 export default defineConfig({
   testDir: "e2e",
+  // M2 plan D14: resets the e2e admin accounts; does nothing when PLAYWRIGHT_BASE_URL is set.
+  globalSetup: "./e2e/global-setup.ts",
   use: { baseURL },
   projects: [
     { name: "mobile-360", use: { ...devices["Desktop Chrome"], viewport: { width: 360, height: 800 } } },

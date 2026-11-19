@@ -1,0 +1,112 @@
+/* design.md §7 Login: centered 400px card over two decorative bursts (520px butter, 300px sky). */
+.login {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 24px 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.login::before,
+.login::after {
+  content: "";
+  position: absolute;
+  aspect-ratio: 1;
+  clip-path: var(--burst);
+  pointer-events: none;
+}
+
+.login::before {
+  width: 520px;
+  top: -200px;
+  right: -180px;
+  background: var(--butter);
+  opacity: 0.7;
+}
+
+.login::after {
+  width: 300px;
+  bottom: -120px;
+  left: -120px;
+  background: var(--sky);
+  opacity: 0.8;
+}
+
+.toggle {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 2;
+}
+
+.card {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 400px;
+  padding: 36px 32px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--surface);
+}
+
+.logo {
+  display: block;
+  margin-bottom: 20px;
+  border-radius: var(--r-full);
+}
+
+/* Eyebrow label with the admin burst marker (9px) */
+.label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font: 500 11px/1 var(--head);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.label::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  background: var(--blue);
+  clip-path: var(--burst);
+}
+
+.title {
+  margin: 10px 0 0;
+  font: 600 28px/1.15 var(--head);
+}
+
+.subtitle {
+  margin: 6px 0 28px;
+  color: var(--muted);
+}
+
+/* The first Field's 18px top margin spaces it from the alert. */
+.alert {
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.submit {
+  margin-top: 26px;
+}
+
+.foot {
+  margin: 20px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}

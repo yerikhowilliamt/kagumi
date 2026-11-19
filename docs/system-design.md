@@ -73,6 +73,7 @@ src/
   app/
     (store)/page.tsx            home: hero, menu, how-to-order, CTA (static + revalidate)
     (store)/actions.ts          createOrder (Server Action)
+    admin/actions.ts            login, logout (Server Actions; logout calls requireAdmin())
     admin/login/page.tsx
     admin/(protected)/layout.tsx  requireAdmin() + shell (sidebar / bottom nav)
     admin/(protected)/page.tsx            overview
@@ -174,7 +175,7 @@ Steps 1–4 run in one interactive transaction, in this order: validation (inval
 | Cookie | `kd_session`, `HttpOnly; Secure; SameSite=Lax; Path=/`, with no `Max-Age` or `Expires`: `sessions.expires_at` is the only clock, because a Server Component can't reissue a cookie when the session is renewed |
 | Lockout | `failed_attempts` and `locked_until` on `admin_users`. 5 failures → locked for 15 minutes. A successful login resets them. Each attempt first runs one atomic `UPDATE … RETURNING` on an unlocked account (`locked_until IS NULL OR locked_until <= now`) that adds 1 to the counter, or on the fifth sets `locked_until = now + 15 min` and the counter back to 0; concurrent attempts are serialized by the row lock, so at most 5 passwords are checked per lock window. While locked, attempts are refused even with the right password, aren't counted and don't extend the lock. Unknown emails are counted nowhere. Empty or over-1024-character passwords fail before any query |
 | Timing | Exactly one scrypt per attempt: unknown email and locked account run it against a dummy hash (computed once per process). Comparisons use `crypto.timingSafeEqual`. One generic error message for every failure |
-| Enforcement | `requireAdmin()` is called at the top of the protected layout **and** inside every admin Server Action and Route Handler (FR21). Middleware/proxy only redirects unauthenticated page visits to `/admin/login` for convenience and is never the security boundary |
+| Enforcement | `requireAdmin()` is called at the top of the protected layout, at the top of every admin page (layouts don't re-render on client navigation), and inside every admin Server Action and Route Handler (FR21). The only public Server Actions are `createOrder` and `login`; `tests/admin-actions.test.ts` imports every `"use server"` file, every protected page and layout and every admin or API route handler, and fails when one of them doesn't redirect to `/admin/login` without a session. Middleware/proxy only redirects unauthenticated page visits to `/admin/login` for convenience and is never the security boundary |
 | CSRF | Server Actions only accept same-origin POSTs (Next.js checks `Origin`), plus `SameSite=Lax`. No custom token needed |
 | Logout | Deletes the session row and clears the cookie |
 

@@ -6,20 +6,22 @@ type Common = {
   helper?: ReactNode;
   /** The validation message; sets `aria-invalid` and is announced with the field. */
   error?: string;
+  /** The admin height (44px) instead of the storefront's 46px (M2 plan D22). */
+  admin?: boolean;
 };
 
 type Props = Common &
   (({ multiline: true } & Omit<ComponentProps<"textarea">, "className" | "id">) | ({ multiline?: false } & Omit<ComponentProps<"input">, "className" | "id">));
 
 // design.md §5 Inputs: label above, helper and error below.
-export default function Field({ label, helper, error, multiline, ...rest }: Props) {
+export default function Field({ label, helper, error, admin, multiline, ...rest }: Props) {
   const id = useId();
   const helperId = `${id}-helper`;
   const errorId = `${id}-error`;
   const describedBy = [helper && helperId, error && errorId].filter(Boolean).join(" ") || undefined;
   const control = {
     id,
-    className: styles.input,
+    className: admin ? `${styles.input} ${styles.admin}` : styles.input,
     "aria-invalid": error ? true : undefined,
     "aria-describedby": describedBy,
   };
