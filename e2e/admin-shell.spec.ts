@@ -57,6 +57,16 @@ test.describe("desktop shell (K1, K3)", () => {
     await expect(page.locator("header")).toBeHidden();
     await expect(page.getByRole("button", { name: TOGGLE })).toHaveCount(1);
   });
+
+  test("the breakpoint: 760 px is the mobile shell, 761 px the sidebar (K1, K2, BSA-M2.3-04)", async ({ page }) => {
+    await loginAs(page, "shell");
+    for (const [width, mobile] of [[760, true], [761, false]] as const) {
+      await page.setViewportSize({ width, height: 800 });
+      await expect(page.locator("aside"), `aside at ${width}`).toBeVisible({ visible: !mobile });
+      await expect(page.locator("header"), `header at ${width}`).toBeVisible({ visible: mobile });
+      await expect(page.getByRole("button", { name: TOGGLE }), `toggles at ${width}`).toHaveCount(1);
+    }
+  });
 });
 
 test.describe("360 px shell (K2)", () => {

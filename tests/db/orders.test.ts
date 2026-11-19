@@ -1,6 +1,7 @@
 // Admin order queries against the development branch (task M2.3 K3), written from the M2 plan D17 and
 // System Design §4.9. Every test runs in a transaction that is always rolled back, with a fixed `now` (W5).
-import { describe, expect, it } from "vitest";
+// Orders get explicit ids, because ROLLBACK does not undo nextval(); the last test checks orders_id_seq did not move.
+import { beforeAll, describe, expect, it } from "vitest";
 import { assertDevelopmentDatabase } from "../../prisma/seed.ts";
 import { jakartaToday } from "@/lib/order";
 import { statusBarCounts } from "@/lib/orders";
@@ -33,9 +34,20 @@ async function rolledBack(fn: (tx: Tx) => Promise<void>) {
 const NOW = new Date("2026-11-19T17:30:00Z");
 const TODAY = jakartaToday(NOW);
 
+const ordersSeq = async () =>
+  (await db.$queryRaw<{ v: string | null }[]>`
+    SELECT last_value::text AS v FROM pg_sequences WHERE schemaname = 'public' AND sequencename = 'orders_id_seq'`)[0].v;
+let seqBefore: string | null;
+beforeAll(async () => {
+  seqBefore = await ordersSeq();
+});
+
+let nextOrderId = -1; // negative ids never collide with real orders and skip the sequence
+
 const order = (tx: Tx, status: "NEW" | "CONFIRMED" | "COMPLETED" | "CANCELLED") =>
   tx.order.create({
     data: {
+      id: nextOrderId--,
       customerName: "Test M2.3",
       customerPhone: "6280000000000",
       fulfillment: "PICKUP",
@@ -92,4 +104,9 @@ describe("statusBarCounts (K3, D17)", { timeout: 60_000 }, () => {
       expect(after.newOrders).toBe(before.newOrders);
     });
   });
+});
+
+// Runs last in this file: the rolled-back tests above must not have consumed an order id (W5, BSA-M2.3-02).
+it("leaves orders_id_seq unchanged", async () => {
+  expect(await ordersSeq()).toBe(seqBefore);
 });
