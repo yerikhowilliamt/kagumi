@@ -27,9 +27,27 @@ export async function fillLogin(page: Page, email: string, password: string) {
   await page.getByRole("button", { name: "Masuk" }).click();
 }
 
+/**
+ * Runs steps that type a real e2e password. If one fails, the password field is emptied before the error reaches
+ * Playwright, so the failure output and the page snapshot in test-results/ never hold the password (D3, D14).
+ */
+export async function withPasswordTyped(page: Page, steps: () => Promise<void>) {
+  try {
+    await steps();
+  } catch (error) {
+    await page
+      .getByLabel("Password")
+      .fill("", { timeout: 1_000 })
+      .catch(() => {});
+    throw error;
+  }
+}
+
 /** Logs in through the form and waits for the orders page. */
 export async function loginAs(page: Page, account: AdminAccount) {
   await page.goto("/admin/login");
-  await fillLogin(page, ADMIN_ACCOUNTS[account], adminPassword(account));
-  await page.waitForURL("**/admin/pesanan");
+  await withPasswordTyped(page, async () => {
+    await fillLogin(page, ADMIN_ACCOUNTS[account], adminPassword(account));
+    await page.waitForURL("**/admin/pesanan");
+  });
 }

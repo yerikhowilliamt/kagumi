@@ -1,12 +1,14 @@
+import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // M2 plan D4, D12 (the gate test, exit criterion 2), D11 (login's server error), D14 (the e2e global setup).
-// next/headers is mocked with a request that has no session cookie, and @/lib/db with a stub that records
-// every property read: a protected export must redirect to /admin/login before it touches the database.
+// next/headers is mocked with a request that has no live session (no cookie, or a token the database doesn't know),
+// and @/lib/db with a stub that records every property read: a protected export must redirect to /admin/login and
+// read at most the session lookup.
 
-const cookieStore = { get: vi.fn(() => undefined), set: vi.fn(), delete: vi.fn() };
+const cookieStore = { get: vi.fn((): { value: string } | undefined => undefined), set: vi.fn(), delete: vi.fn() };
 vi.mock("next/headers", () => ({
   cookies: async () => cookieStore,
   headers: async () => new Headers({ "user-agent": "kagumi-gate-test" }),
@@ -34,7 +36,7 @@ function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) return entry.name === "generated" ? [] : walk(path);
-    return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
+    return /\.[jt]sx?$/.test(entry.name) ? [path] : [];
   });
 }
 
@@ -42,8 +44,22 @@ const sources = walk(SRC).map((path) => ({ path, rel: relative(ROOT, path), text
 // The directive as the first statement: only comments and whitespace may precede it.
 const FIRST_STATEMENT = /^(?:\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*["']use server["'];?/;
 const actionFiles = sources.filter((s) => FIRST_STATEMENT.test(s.text));
-const protectedRoutes = sources.filter((s) => /src\/app\/admin\/\(protected\)\/(.*\/)?(page|layout)\.tsx$/.test(s.rel));
-const routeHandlers = sources.filter((s) => /src\/app\/(admin|api)\/(.*\/)?route\.(ts|tsx)$/.test(s.rel));
+// Every file Next renders as part of a route (BSA-M2.2-03): only the login page may sit outside (protected).
+const ROUTE_FILE = /\/(page|layout|template|default)\.[jt]sx?$/;
+const adminRoutes = sources.filter((s) => s.rel.startsWith("src/app/admin/") && ROUTE_FILE.test(s.rel));
+const protectedRoutes = adminRoutes.filter((s) => s.rel.startsWith("src/app/admin/(protected)/"));
+const routeHandlers = sources.filter((s) => /src\/app\/(admin|api)\/(.*\/)?route\.[jt]sx?$/.test(s.rel));
+
+// Two ways to have no session (BSA-M2.2-04): a cookie-presence check passes the first but not the second.
+const NO_SESSION = [
+  { name: "no cookie", cookie: undefined, reads: [] as string[] },
+  { name: "a token with no session row", cookie: { value: randomBytes(32).toString("base64url") }, reads: ["session"] },
+];
+
+function stubNoSession(mode: (typeof NO_SESSION)[number]) {
+  cookieStore.get.mockImplementation(() => mode.cookie);
+  dbRead = (prop) => (prop === "session" ? { findUnique: async () => null } : undefined);
+}
 
 /** The path of a Next redirect error (digest `NEXT_REDIRECT;<type>;<path>;<status>;`), or the error itself. */
 async function redirectOf(run: () => unknown): Promise<string> {
@@ -60,7 +76,7 @@ async function redirectOf(run: () => unknown): Promise<string> {
 beforeEach(() => {
   dbReads.length = 0;
   dbRead = () => undefined;
-  cookieStore.get.mockClear();
+  cookieStore.get.mockReset();
   cookieStore.set.mockClear();
   cookieStore.delete.mockClear();
 });
@@ -71,6 +87,10 @@ afterEach(() => {
 });
 
 describe("admin gate (D4, D12)", () => {
+  it("only the login page sits outside (protected) (BSA-M2.2-03)", () => {
+    expect(adminRoutes.filter((s) => !protectedRoutes.includes(s)).map((s) => s.rel)).toEqual(["src/app/admin/login/page.tsx"]);
+  });
+
   it("finds the action files, the protected pages and layouts", () => {
     expect(actionFiles.map((s) => s.rel).sort()).toEqual(expect.arrayContaining(["src/app/(store)/actions.ts", "src/app/admin/actions.ts"]));
     expect(protectedRoutes.map((s) => s.rel).sort()).toEqual(
@@ -99,46 +119,51 @@ describe("admin gate (D4, D12)", () => {
     expect(Object.keys(await import("@/app/admin/actions")).sort()).toEqual(["login", "logout"]);
   });
 
-  it("every other Server Action redirects to /admin/login without a session and reads nothing from the database", async () => {
-    const called: string[] = [];
-    for (const file of actionFiles) {
-      const mod: Record<string, unknown> = await import(file.path);
-      for (const [name, fn] of Object.entries(mod)) {
-        if (PUBLIC_ACTIONS.includes(name)) continue;
-        expect(typeof fn, `${file.rel} ${name}`).toBe("function");
-        dbReads.length = 0;
-        await expect(redirectOf(() => (fn as (...args: unknown[]) => unknown)(null, new FormData())), `${file.rel} ${name}`).resolves.toBe(
-          "/admin/login",
-        );
-        expect(dbReads, `${file.rel} ${name}`).toEqual([]);
-        called.push(name);
+  describe.each(NO_SESSION)("with $name", (mode) => {
+    it("every other Server Action redirects to /admin/login and reads at most the session lookup", async () => {
+      const called: string[] = [];
+      for (const file of actionFiles) {
+        const mod: Record<string, unknown> = await import(file.path);
+        for (const [name, fn] of Object.entries(mod)) {
+          if (PUBLIC_ACTIONS.includes(name)) continue;
+          expect(typeof fn, `${file.rel} ${name}`).toBe("function");
+          stubNoSession(mode);
+          dbReads.length = 0;
+          await expect(redirectOf(() => (fn as (...args: unknown[]) => unknown)(null, new FormData())), `${file.rel} ${name}`).resolves.toBe(
+            "/admin/login",
+          );
+          expect(dbReads, `${file.rel} ${name}`).toEqual(mode.reads);
+          called.push(name);
+        }
       }
-    }
-    expect(called).toContain("logout");
-  });
+      expect(called).toContain("logout");
+    });
 
-  it("every protected page and layout redirects to /admin/login without a session and reads nothing from the database", async () => {
-    for (const file of protectedRoutes) {
-      const Component = (await import(file.path)).default as (props: unknown) => unknown;
-      dbReads.length = 0;
-      const props = { params: Promise.resolve({}), searchParams: Promise.resolve({}), children: null };
-      await expect(redirectOf(() => Component(props)), file.rel).resolves.toBe("/admin/login");
-      expect(dbReads, file.rel).toEqual([]);
-    }
-  });
-
-  it("every admin and API route handler redirects to /admin/login (none exist in M2)", async () => {
-    for (const file of routeHandlers) {
-      const mod: Record<string, unknown> = await import(file.path);
-      for (const [name, fn] of Object.entries(mod)) {
-        if (typeof fn !== "function") continue;
+    it("every protected page, layout, template and default redirects to /admin/login and reads at most the session lookup", async () => {
+      for (const file of protectedRoutes) {
+        const Component = (await import(file.path)).default as (props: unknown) => unknown;
+        stubNoSession(mode);
         dbReads.length = 0;
-        const request = new Request("http://localhost/", { method: name });
-        await expect(redirectOf(() => (fn as (r: Request) => unknown)(request)), `${file.rel} ${name}`).resolves.toBe("/admin/login");
-        expect(dbReads, `${file.rel} ${name}`).toEqual([]);
+        const props = { params: Promise.resolve({}), searchParams: Promise.resolve({}), children: null };
+        await expect(redirectOf(() => Component(props)), file.rel).resolves.toBe("/admin/login");
+        expect(dbReads, file.rel).toEqual(mode.reads);
       }
-    }
-    expect(routeHandlers.map((s) => s.rel)).toEqual([]);
+    });
+
+    it("every admin and API route handler redirects to /admin/login (none exist in M2)", async () => {
+      for (const file of routeHandlers) {
+        const mod: Record<string, unknown> = await import(file.path);
+        for (const [name, fn] of Object.entries(mod)) {
+          if (typeof fn !== "function") continue;
+          stubNoSession(mode);
+          dbReads.length = 0;
+          const request = new Request("http://localhost/", { method: name });
+          await expect(redirectOf(() => (fn as (r: Request) => unknown)(request)), `${file.rel} ${name}`).resolves.toBe("/admin/login");
+          expect(dbReads, `${file.rel} ${name}`).toEqual(mode.reads);
+        }
+      }
+      expect(routeHandlers.map((s) => s.rel)).toEqual([]);
+    });
   });
 });
 
@@ -191,5 +216,59 @@ describe("e2e global setup (D14, K8)", () => {
     await expect(globalSetup()).resolves.toBeUndefined();
     expect(loadEnvFile).not.toHaveBeenCalled();
     expect(dbReads).toEqual([]);
+  });
+
+  // BSA-M2.2-01: the write path. Each module is replaced so the order of loading .env, the host guard and the
+  // database import is recorded; nothing reaches a database.
+  async function runSetup(guard: () => void) {
+    const order: string[] = [];
+    const resets: { email: string; password: string }[] = [];
+    vi.stubEnv("PLAYWRIGHT_BASE_URL", "");
+    vi.spyOn(process, "loadEnvFile").mockImplementation(() => void order.push("load"));
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.resetModules();
+    vi.doMock("../prisma/seed.ts", () => ({ assertDevelopmentDatabase: () => (order.push("assert"), guard()) }));
+    vi.doMock("../scripts/create-admin.ts", () => ({
+      resetAdmin: async (_tx: unknown, input: { email: string; password: string }) => void resets.push(input),
+    }));
+    vi.doMock("../src/lib/db.ts", () => {
+      order.push("db");
+      return { db: { $transaction: (run: (tx: unknown) => unknown) => run({}) } };
+    });
+    const { default: globalSetup } = await import("../e2e/global-setup.ts");
+    const { ADMIN_ACCOUNTS, passwordVar } = await import("../e2e/admin.ts");
+    const outcome = await globalSetup().then(
+      () => "resolved",
+      () => "rejected",
+    );
+    const passwords = Object.keys(ADMIN_ACCOUNTS).map((account) => process.env[passwordVar(account as keyof typeof ADMIN_ACCOUNTS)]);
+    for (const account of Object.keys(ADMIN_ACCOUNTS)) delete process.env[passwordVar(account as keyof typeof ADMIN_ACCOUNTS)];
+    vi.doUnmock("../prisma/seed.ts");
+    vi.doUnmock("../scripts/create-admin.ts");
+    vi.doUnmock("../src/lib/db.ts");
+    vi.resetModules();
+    return { outcome, order, resets, passwords, ADMIN_ACCOUNTS, printed: [...log.mock.calls, ...error.mock.calls] };
+  }
+
+  it("without it: loads .env, checks the development host before importing db, resets the five accounts, prints nothing", async () => {
+    const run = await runSetup(() => {});
+    expect(run.outcome).toBe("resolved");
+    expect(run.order).toEqual(["load", "assert", "db"]);
+    expect(run.resets.map((r) => r.email)).toEqual(Object.values(run.ADMIN_ACCOUNTS));
+    const passwords = run.resets.map((r) => r.password);
+    for (const password of passwords) expect(password).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(new Set(passwords).size).toBe(5);
+    expect(run.passwords).toEqual(passwords);
+    expect(run.printed).toEqual([]);
+  });
+
+  it("resets nothing and never imports db when the host guard throws", async () => {
+    const run = await runSetup(() => {
+      throw new Error("DATABASE_URL is not the development branch named in DEV_DATABASE_HOST; refusing to run");
+    });
+    expect(run.outcome).toBe("rejected");
+    expect(run.order).toEqual(["load", "assert"]);
+    expect(run.resets).toEqual([]);
   });
 });

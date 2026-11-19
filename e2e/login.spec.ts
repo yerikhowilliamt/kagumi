@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
-import { ADMIN_ACCOUNTS, adminPassword, fillLogin, loginAs } from "./admin";
+import { ADMIN_ACCOUNTS, adminPassword, fillLogin, loginAs, withPasswordTyped } from "./admin";
 
 // M2.2 login (PRD FR15, FR19–FR21, design.md §7 Login, M2 plan D2, D4, D8, D11, D14, D21, D22).
 // Logs in with the e2e accounts that e2e/global-setup.ts resets on the development branch (plan W4).
@@ -46,6 +46,8 @@ test.describe("login page (K1, D21, D22)", () => {
       await expect(page.getByLabel("Email")).toHaveAttribute("autocomplete", "username");
       await expect(page.getByLabel("Password")).toHaveAttribute("autocomplete", "current-password");
       await expect(page.getByRole("button", { name: "Masuk" })).toBeVisible();
+      // design.md §5 Buttons: admin 42px (BSA-M2.2-05).
+      expect((await page.getByRole("button", { name: "Masuk" }).boundingBox())?.height).toBe(42);
       await expect(page.getByText("Lupa password? Hubungi pengelola website.")).toBeVisible();
       await expect(page.getByRole("button", { name: "Ganti tema terang/gelap" })).toBeVisible();
       await expect(formAlert(page)).toHaveCount(0);
@@ -68,15 +70,15 @@ test("a wrong password and an unknown email get the same alert, keep the email a
   await page.goto("/admin/login");
   const alerts: string[] = [];
   // At most one wrong password per project on the login account, so parallel projects never reach the lockout (D14).
-  for (const [email, password] of [
-    [ADMIN_ACCOUNTS.login, `salah-${randomBytes(6).toString("hex")}`],
-    [`tidak-ada-${randomBytes(6).toString("hex")}@kagumi.test`, adminPassword("login")],
-  ]) {
+  // Both passwords are random, never an account's real one, so a failure can't print a real password (BSA-M2.2-02).
+  for (const email of [ADMIN_ACCOUNTS.login, `tidak-ada-${randomBytes(6).toString("hex")}@kagumi.test`]) {
+    const password = `salah-${randomBytes(6).toString("hex")}`;
     await submit(page, email, password);
     await expect(formAlert(page)).toHaveText(INVALID);
     alerts.push((await formAlert(page).textContent()) ?? "");
     await expect(page.getByLabel("Email")).toHaveValue(email);
-    await expect(page.getByLabel("Password")).toHaveValue("");
+    // Compared without echoing the value in a failure message.
+    expect((await page.getByLabel("Password").inputValue()) === "", "password cleared").toBe(true);
     await expect(page).toHaveURL(/\/admin\/login$/);
     expect(await sessionCookie(context)).toBeUndefined();
   }
@@ -90,9 +92,11 @@ test("five wrong passwords lock the account: the right one then fails the same w
     await submit(page, ADMIN_ACCOUNTS.lockout, `salah-${i}-${randomBytes(6).toString("hex")}`);
     await expect(formAlert(page)).toHaveText(INVALID);
   }
-  await submit(page, ADMIN_ACCOUNTS.lockout, adminPassword("lockout"));
-  await expect(formAlert(page)).toHaveText(INVALID);
-  await expect(page).toHaveURL(/\/admin\/login$/);
+  await withPasswordTyped(page, async () => {
+    await submit(page, ADMIN_ACCOUNTS.lockout, adminPassword("lockout"));
+    await expect(formAlert(page)).toHaveText(INVALID);
+    await expect(page).toHaveURL(/\/admin\/login$/);
+  });
   expect(await sessionCookie(context)).toBeUndefined();
 });
 

@@ -35,7 +35,7 @@ export default function LoginForm() {
       />
       <Field admin label="Password" name="password" type="password" autoComplete="current-password" required />
       <div className={styles.submit}>
-        <Button type="submit" size="md" block disabled={pending}>
+        <Button type="submit" size="nav" block disabled={pending}>
           {pending ? "Masuk…" : "Masuk"}
         </Button>
       </div>
