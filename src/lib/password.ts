@@ -4,8 +4,9 @@ import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 
 const COST = { N: 16384, r: 8, p: 1 };
 const KEY_BYTES = 64;
-// scrypt$N$r$p$<salt: 16 bytes hex>$<key: 64 bytes hex>
-const STORED = /^scrypt\$(\d+)\$(\d+)\$(\d+)\$([0-9a-f]{32})\$([0-9a-f]{128})$/;
+// scrypt$N$r$p$<salt: 16 bytes hex>$<key: 64 bytes hex>. N, r, p start with 1–9: node's scrypt reads 0 as
+// "use the default", which would make a zero-cost string verify (BSA-M2.1-03).
+const STORED = /^scrypt\$([1-9]\d*)\$([1-9]\d*)\$([1-9]\d*)\$([0-9a-f]{32})\$([0-9a-f]{128})$/;
 
 function derive(password: string, salt: Buffer, cost: { N: number; r: number; p: number }) {
   // scrypt throws synchronously on bad parameters; inside the executor that becomes a rejection.
@@ -32,11 +33,11 @@ export async function verifyPassword(password: string, stored: string) {
   }
 }
 
-let dummy: Promise<string> | undefined;
+// Built when the module loads, so even the first unknown or locked attempt runs exactly one scrypt (BSA-M2.1-02).
+const dummy = hashPassword(randomBytes(32).toString("hex"));
 
-/** One scrypt against a dummy hash (computed once per process), so a missing or locked account costs the same time. Always false. */
+/** One scrypt against the dummy hash, so a missing or locked account costs the same time. Always false. */
 export async function verifyDummy(password: string) {
-  dummy ??= hashPassword(randomBytes(32).toString("hex"));
   await verifyPassword(password, await dummy);
   return false;
 }

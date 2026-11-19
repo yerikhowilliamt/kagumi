@@ -1,9 +1,17 @@
 // Password hashing (task M2.1 K2, K9), written from System Design §4.4 and the M2 plan D10, D13, D23.
-import { randomBytes, scryptSync } from "node:crypto";
+import { randomBytes, scrypt, scryptSync, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { hashPassword, normalizeEmail, verifyDummy, verifyPassword } from "@/lib/password";
+
+// TEC-M2.1-05 and BSA-M2.1-02: watch the key comparison and count scrypt calls. The wrappers call node's functions unchanged.
+vi.mock("node:crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:crypto")>();
+  return { ...actual, scrypt: vi.fn(actual.scrypt), timingSafeEqual: vi.fn(actual.timingSafeEqual) };
+});
+const compares = vi.mocked(timingSafeEqual);
+const scryptCalls = vi.mocked(scrypt);
 
 const root = join(import.meta.dirname, "..");
 const FORMAT = /^scrypt\$16384\$8\$1\$[0-9a-f]{32}\$[0-9a-f]{128}$/;
@@ -48,6 +56,34 @@ describe("verifyPassword (D10)", () => {
     }
   });
 
+  it("is false for N, r or p of 0, which node's scrypt would read as its defaults (BSA-M2.1-03)", async () => {
+    const salt = randomBytes(16);
+    const key = scryptSync("zero cost", salt, 64).toString("hex"); // node defaults: N 16384, r 8, p 1
+    const hex = salt.toString("hex");
+    expect(await verifyPassword("zero cost", `scrypt$16384$8$1$${hex}$${key}`)).toBe(true);
+    for (const cost of ["0$8$1", "16384$0$1", "16384$8$0", "0$0$0", "016384$8$1"]) {
+      expect(await verifyPassword("zero cost", `scrypt$${cost}$${hex}$${key}`), cost).toBe(false);
+    }
+  });
+
+  it("reads r and p from the stored string (TEC-M2.1-05)", async () => {
+    const salt = randomBytes(16);
+    const key = scryptSync("other cost", salt, 64, { N: 1024, r: 4, p: 2 }).toString("hex");
+    const hex = salt.toString("hex");
+    expect(await verifyPassword("other cost", `scrypt$1024$4$2$${hex}$${key}`)).toBe(true);
+    expect(await verifyPassword("other cost", `scrypt$1024$8$2$${hex}$${key}`)).toBe(false);
+    expect(await verifyPassword("other cost", `scrypt$1024$4$1$${hex}$${key}`)).toBe(false);
+  });
+
+  it("compares the keys with timingSafeEqual on two 64-byte buffers (System Design §4.4, §10)", async () => {
+    const stored = await hashPassword("compare me 12");
+    compares.mockClear();
+    expect(await verifyPassword("compare me 13", stored)).toBe(false);
+    expect(compares).toHaveBeenCalledTimes(1);
+    const [a, b] = compares.mock.calls[0] as [Buffer, Buffer];
+    expect([a.length, b.length]).toEqual([64, 64]);
+  });
+
   it("reads N, r and p from the stored string (a hash with N = 1024 verifies)", async () => {
     const salt = randomBytes(16);
     const key = scryptSync("low cost password", salt, 64, { N: 1024, r: 8, p: 1 });
@@ -58,8 +94,10 @@ describe("verifyPassword (D10)", () => {
 });
 
 describe("verifyDummy and normalizeEmail", () => {
-  it("verifyDummy is always false", async () => {
+  it("verifyDummy is always false and runs exactly one scrypt, even the first time in a process (BSA-M2.1-02)", async () => {
+    scryptCalls.mockClear();
     expect(await verifyDummy("anything")).toBe(false);
+    expect(scryptCalls).toHaveBeenCalledTimes(1);
     expect(await verifyDummy("")).toBe(false);
   });
 

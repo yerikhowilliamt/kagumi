@@ -2,12 +2,13 @@
 // ERD admin_users and sessions, and the M2 plan D8, D9, D11, D13. Every test runs in a transaction that is
 // always rolled back, with `now` as a parameter. The one committed row (W2): the barrier test's fixture
 // admin under a random test-…@kagumi.test email, deleted in afterAll (its sessions cascade).
+import { spawnSync } from "node:child_process";
 import { createHash, randomUUID, scrypt } from "node:crypto";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { assertDevelopmentDatabase } from "../../prisma/seed.ts";
 import { resetAdmin } from "../../scripts/create-admin.ts";
 import { attemptLogin, createSession, deleteSession, findSession } from "@/lib/auth";
-import { hashPassword, verifyDummy, verifyPassword } from "@/lib/password";
+import { hashPassword, verifyPassword } from "@/lib/password";
 
 // K4: count the real scrypt derivations. The wrapper calls node's scrypt unchanged.
 vi.mock("node:crypto", async (importOriginal) => {
@@ -129,6 +130,9 @@ describe("attemptLogin: lockout (K3, D9)", { timeout: 60_000 }, () => {
       expect(await login(tx, "x".repeat(1025), NOW)).toEqual({ ok: false });
       expect(await login(tx, RIGHT, NOW, "   ")).toEqual({ ok: false });
       expect(await row(tx, a.id)).toEqual(before);
+      // 1024 characters is still an attempt: it is counted (TEC-M2.1-03).
+      expect(await login(tx, "x".repeat(1024), NOW)).toEqual({ ok: false });
+      expect(await row(tx, a.id)).toMatchObject({ failedAttempts: 1 });
     });
   });
 });
@@ -151,7 +155,6 @@ describe("attemptLogin: one answer, one scrypt (K4, D9.3, D11)", { timeout: 60_0
     await rolledBack(async (tx) => {
       await admin(tx);
       await admin(tx, { email: "locked@x.test", lockedUntil: at(10 * MIN) });
-      await verifyDummy("warm up"); // the dummy hash is computed once per process, outside the count
       const cases = [
         ["right password", RIGHT, EMAIL],
         ["wrong password", WRONG, EMAIL],
@@ -221,6 +224,74 @@ describe("attemptLogin under concurrency (K5, D9.2)", { timeout: 60_000 }, () =>
     const after = await db.adminUser.findUniqueOrThrow({ where: { email } });
     expect(after.failedAttempts).toBe(3);
   });
+
+  it("a sixth attempt that waits for the fifth's lock is refused, even with the right password (TEC-M2.1-01)", async () => {
+    await db.adminUser.update({ where: { email }, data: { failedAttempts: 4, lockedUntil: null } });
+    const now = new Date();
+
+    let releaseA!: () => void;
+    const gateA = new Promise<void>((resolve) => (releaseA = resolve));
+    let signalA!: () => void;
+    const aReserved = new Promise<void>((resolve) => (signalA = resolve));
+    let signalB!: () => void;
+    const bStarted = new Promise<void>((resolve) => (signalB = resolve));
+    const backendPid = async (tx: Tx) => (await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`)[0].pid;
+    let pidA = 0;
+    let pidB = 0;
+
+    const a = db.$transaction(
+      async (tx) => {
+        pidA = await backendPid(tx);
+        const result = await attemptLogin(tx, { email, password: WRONG, now }); // the fifth failure: locks
+        signalA();
+        await gateA;
+        return result;
+      },
+      { timeout: 30_000 },
+    );
+    await aReserved;
+    const b = db.$transaction(
+      async (tx) => {
+        pidB = await backendPid(tx);
+        signalB();
+        return attemptLogin(tx, { email, password: RIGHT, now });
+      },
+      { timeout: 30_000 },
+    );
+
+    await bStarted;
+    let waiting = false;
+    for (let i = 0; i < 200 && !waiting; i++) {
+      const [{ blocked }] = await db.$queryRaw<{ blocked: boolean }[]>`
+        SELECT ${pidA}::int = ANY(pg_blocking_pids(${pidB}::int)) AS blocked`;
+      waiting = blocked;
+    }
+    releaseA();
+    expect(await a).toEqual({ ok: false });
+    expect(await b).toEqual({ ok: false });
+    expect(waiting, "B never waited for A's lock").toBe(true);
+    expect(await db.adminUser.findUniqueOrThrow({ where: { email } })).toMatchObject({
+      failedAttempts: 0,
+      lockedUntil: new Date(now.getTime() + 15 * MIN),
+    });
+  });
+
+  it("checks at most five passwords against the account when twelve attempts arrive at once (BSA-M2.1-01)", async () => {
+    const fixture = await db.adminUser.update({ where: { email }, data: { failedAttempts: 0, lockedUntil: null } });
+    const salt = fixture.passwordHash.split("$")[4];
+    const now = new Date();
+    scryptCalls.mockClear();
+    const results = await Promise.all(Array.from({ length: 12 }, () => attemptLogin(db, { email, password: WRONG, now })));
+    expect(results.every((r) => !r.ok)).toBe(true);
+    // Every attempt runs one scrypt; only those that reserved an attempt use the account's salt.
+    expect(scryptCalls).toHaveBeenCalledTimes(12);
+    const againstAccount = scryptCalls.mock.calls.filter(([, s]) => Buffer.from(s as Buffer).toString("hex") === salt);
+    expect(againstAccount).toHaveLength(5);
+    expect(await db.adminUser.findUniqueOrThrow({ where: { email } })).toMatchObject({
+      failedAttempts: 0,
+      lockedUntil: new Date(now.getTime() + 15 * MIN),
+    });
+  });
 });
 
 describe("sessions (K6, D8)", { timeout: 60_000 }, () => {
@@ -252,8 +323,13 @@ describe("sessions (K6, D8)", { timeout: 60_000 }, () => {
       expect(await findSession(tx, token, renewAt)).toEqual(found);
       expect((await tx.session.findUniqueOrThrow({ where: { id: stored.id } })).expiresAt).toEqual(new Date(renewAt.getTime() + 7 * DAY));
 
+      // A second session of the same admin leaves the first alone; deleting one leaves the other (TEC-M2.1-02).
+      const second = await createSession(tx, a.id, renewAt);
+      expect(await findSession(tx, token, renewAt)).toEqual(found);
       await deleteSession(tx, stored.id);
       expect(await tx.session.count({ where: { id: stored.id } })).toBe(0);
+      expect(await findSession(tx, second.token, renewAt)).not.toBeNull();
+      expect(await tx.session.count({ where: { adminId: a.id } })).toBe(1);
       expect(await findSession(tx, token, renewAt)).toBeNull();
     });
   });
@@ -304,11 +380,44 @@ describe("resetAdmin (K7, D13)", { timeout: 60_000 }, () => {
       expect(await refusal("ok@x.test", shortPw)).toMatch(/ADMIN_PASSWORD.*at least 12 characters/);
       expect(await refusal(noAt, "long enough password")).toMatch(/ADMIN_EMAIL.*exactly one @/);
       expect(await refusal(long, "long enough password")).toMatch(/ADMIN_EMAIL.*at most 254 characters/);
+      expect(await refusal("a@b@x.test", "long enough password")).toMatch(/ADMIN_EMAIL.*exactly one @/);
+      expect(await refusal("ok@x.test", "p".repeat(1025))).toMatch(/ADMIN_PASSWORD.*at most 1024 characters/);
       expect(await tx.adminUser.count({ where: { email: { in: ["ok@x.test", noAt, long] } } })).toBe(0);
 
       const max = `${"a".repeat(254 - "@x.test".length)}@x.test`;
       expect(await resetAdmin(tx, { email: max, password: "long enough password", now: NOW })).toBe("created");
+      expect(await resetAdmin(tx, { email: "max-pw@x.test", password: "p".repeat(1024), now: NOW })).toBe("created");
     });
+  });
+});
+
+describe("node scripts/create-admin.ts (TEC-M2.1-04, D13)", { timeout: 120_000 }, () => {
+  // Fake input only; both runs fail before anything commits.
+  const run = (env: Record<string, string>) =>
+    spawnSync(process.execPath, ["scripts/create-admin.ts"], { env: { ...process.env, ...env }, encoding: "utf8" });
+
+  it("a broken rule prints only the rule and exits 1", async () => {
+    const email = `fake-${randomUUID()}@two@kagumi.test`;
+    const r = run({ ADMIN_EMAIL: email, ADMIN_PASSWORD: "fake password 123" });
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe("ADMIN_EMAIL must contain exactly one @\n");
+  });
+
+  it("any other failure prints only the error's name and code, never the input or the driver message", async () => {
+    const email = `fake-${randomUUID()}@kagumi.test`;
+    const password = `fake password ${randomUUID()}`;
+    const url = new URL(process.env.DATABASE_URL!);
+    // The development host, so the guard passes, and a database that doesn't exist, so the query fails. Not a
+    // wrong password: failed logins made the proxy slow to open the next run's connections (P2028).
+    url.pathname = "/kagumi_missing_db";
+    const r = run({ ADMIN_EMAIL: email, ADMIN_PASSWORD: password, DATABASE_URL: url.toString() });
+    // Booleans only, so a failure never prints the connection string.
+    expect(r.status === 1, "exit code 1").toBe(true);
+    expect(r.stdout === "", "nothing on stdout").toBe(true);
+    expect(/^create-admin failed: \w+( \w+)?\n$/.test(r.stderr), "one line: name and optional code").toBe(true);
+    expect([email, password, url.username, url.hostname].some((v) => r.stderr.includes(v)), "no input or URL part").toBe(false);
+    expect(await db.adminUser.count({ where: { email } })).toBe(0);
   });
 });
 
