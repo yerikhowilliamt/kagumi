@@ -139,15 +139,25 @@ describe("admin gate (D4, D12)", () => {
       expect(called).toContain("logout");
     });
 
-    it("every protected page, layout, template and default redirects to /admin/login and reads at most the session lookup", async () => {
+    // The default export and every function Next calls per request for the route (TR-M2.2-01).
+    it("every protected page, layout, template and default (and its generateMetadata / generateViewport) redirects to /admin/login and reads at most the session lookup", async () => {
+      const called: string[] = [];
       for (const file of protectedRoutes) {
-        const Component = (await import(file.path)).default as (props: unknown) => unknown;
-        stubNoSession(mode);
-        dbReads.length = 0;
-        const props = { params: Promise.resolve({}), searchParams: Promise.resolve({}), children: null };
-        await expect(redirectOf(() => Component(props)), file.rel).resolves.toBe("/admin/login");
-        expect(dbReads, file.rel).toEqual(mode.reads);
+        const mod: Record<string, unknown> = await import(file.path);
+        for (const name of ["default", "generateMetadata", "generateViewport"]) {
+          const fn = mod[name];
+          if (typeof fn !== "function") continue;
+          stubNoSession(mode);
+          dbReads.length = 0;
+          const props = { params: Promise.resolve({}), searchParams: Promise.resolve({}), children: null };
+          await expect(redirectOf(() => (fn as (props: unknown, parent?: unknown) => unknown)(props, Promise.resolve({}))), `${file.rel} ${name}`).resolves.toBe(
+            "/admin/login",
+          );
+          expect(dbReads, `${file.rel} ${name}`).toEqual(mode.reads);
+          called.push(`${file.rel} ${name}`);
+        }
       }
+      expect(called).toContain("src/app/admin/(protected)/layout.tsx default");
     });
 
     it("every admin and API route handler redirects to /admin/login (none exist in M2)", async () => {

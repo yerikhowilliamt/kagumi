@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test, type BrowserContext, type ElementHandle, type Page } from "@playwright/test";
 import { ADMIN_ACCOUNTS, adminPassword, fillLogin, loginAs, withPasswordTyped } from "./admin";
 
 // M2.2 login (PRD FR15, FR19–FR21, design.md §7 Login, M2 plan D2, D4, D8, D11, D14, D21, D22).
@@ -69,6 +69,7 @@ test("right credentials land on the orders page with the D8 session cookie (K2)"
 test("a wrong password and an unknown email get the same alert, keep the email and set no cookie (K3)", async ({ page, context }) => {
   await page.goto("/admin/login");
   const alerts: string[] = [];
+  let previousAlert: ElementHandle | undefined;
   // At most one wrong password per project on the login account, so parallel projects never reach the lockout (D14).
   // Both passwords are random, never an account's real one, so a failure can't print a real password (BSA-M2.2-02).
   for (const email of [ADMIN_ACCOUNTS.login, `tidak-ada-${randomBytes(6).toString("hex")}@kagumi.test`]) {
@@ -76,9 +77,13 @@ test("a wrong password and an unknown email get the same alert, keep the email a
     await submit(page, email, password);
     await expect(formAlert(page)).toHaveText(INVALID);
     alerts.push((await formAlert(page).textContent()) ?? "");
+    if (previousAlert) expect(await previousAlert.evaluate((el) => el.isConnected), "a new alert element").toBe(false);
     await expect(page.getByLabel("Email")).toHaveValue(email);
     // Compared without echoing the value in a failure message.
     expect((await page.getByLabel("Password").inputValue()) === "", "password cleared").toBe(true);
+    // TR-M2.2-04: focus on the cleared password field, and each failure mounts a new alert (announced again).
+    await expect(page.getByLabel("Password")).toBeFocused();
+    previousAlert = await formAlert(page).elementHandle();
     await expect(page).toHaveURL(/\/admin\/login$/);
     expect(await sessionCookie(context)).toBeUndefined();
   }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { login } from "../actions";
+import { useActionState, useEffect, useRef, useState } from "react";
+import { login, type LoginState } from "../actions";
 import Button from "@/components/Button";
 import Field from "@/components/Field";
 import styles from "./page.module.css";
@@ -13,13 +13,25 @@ export const LOGIN_ALERTS = {
 } as const;
 
 export default function LoginForm() {
-  const [state, action, pending] = useActionState(login, null);
+  // attempt keys the alert, so a repeated failure re-mounts it and is announced again (design.md §8, TR-M2.2-04).
+  const [state, action, pending] = useActionState(
+    async (prev: (LoginState & { attempt: number }) | null, form: FormData) => {
+      const result = await login(null, form);
+      return result && { ...result, attempt: (prev?.attempt ?? 0) + 1 };
+    },
+    null,
+  );
+  const password = useRef<HTMLInputElement>(null);
+  // After a failure, focus goes to the cleared password field (design.md §8).
+  useEffect(() => {
+    if (state) password.current?.focus();
+  }, [state]);
   // Controlled, so React's form reset after the action keeps the email; the password is uncontrolled and clears.
   const [email, setEmail] = useState("");
   return (
     <form action={action} noValidate>
       {state && (
-        <div className={styles.alert} role="alert">
+        <div key={state.attempt} className={styles.alert} role="alert">
           {LOGIN_ALERTS[state.error]}
         </div>
       )}
@@ -33,7 +45,7 @@ export default function LoginForm() {
         value={email}
         onChange={(e) => setEmail(e.target.value)}
       />
-      <Field admin label="Password" name="password" type="password" autoComplete="current-password" required />
+      <Field admin ref={password} label="Password" name="password" type="password" autoComplete="current-password" required />
       <div className={styles.submit}>
         <Button type="submit" size="nav" block disabled={pending}>
           {pending ? "Masuk…" : "Masuk"}

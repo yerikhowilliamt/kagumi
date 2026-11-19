@@ -62,7 +62,7 @@ Copy `.env.example` to `.env` (git-ignored). The project owner supplies the valu
 | `DEV_DATABASE_HOST` | The direct host of the development branch (§4). The seed and `tests/db` refuse to run when `DATABASE_URL` points at any other host |
 | `TRACKING_SECRET` | Secret of the daily salt of the visitor hash (`src/lib/tracking.ts`), used by `createOrder` for the checkout rate limit. The project owner generates it (for example `openssl rand -hex 32`) and enters it; nobody else reads it. Without it every checkout returns the `server` result. The Vitest tests pass their own fake secret and don't need it |
 | `ADMIN_EMAIL` | Email of your development admin account. Read only by `node scripts/create-admin.ts` (§4) |
-| `ADMIN_PASSWORD` | Password of that account, 12 to 1024 characters. Read only by `node scripts/create-admin.ts`; never printed. Never set either variable for production |
+| `ADMIN_PASSWORD` | Password of that account, 12 to 1024 characters. Read only by `node scripts/create-admin.ts`; never printed. How the production account is created is decided in M5 (System Design §8 lists both variables; until then set them only in your local `.env`) |
 
 To check that both admin variables are set without printing them:
 

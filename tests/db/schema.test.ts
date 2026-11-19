@@ -239,17 +239,20 @@ async function inRolledBackTx(fn: (tx: Tx) => Promise<void>) {
     db.$transaction(async (tx) => {
       await fn(tx);
       throw ROLLBACK;
-    }),
+    }, { maxWait: 10_000 }), // ERR-003
   ).rejects.toBe(ROLLBACK);
 }
 
 async function expectRejected(constraint: string, fn: (tx: Tx) => Promise<unknown>) {
   let error: unknown;
   try {
-    await db.$transaction(async (tx) => {
-      await fn(tx);
-      throw ROLLBACK;
-    });
+    await db.$transaction(
+      async (tx) => {
+        await fn(tx);
+        throw ROLLBACK;
+      },
+      { maxWait: 10_000 }, // ERR-003
+    );
   } catch (e) {
     error = e;
   }
