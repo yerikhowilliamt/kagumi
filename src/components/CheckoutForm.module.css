@@ -1,0 +1,79 @@
+/* design.md §6 Cart sheet, step 2. */
+.alert {
+  margin: 16px 0 4px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.alert a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.group {
+  display: grid;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.label {
+  font-family: var(--head);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.optional {
+  font-family: var(--body);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.error {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--error);
+}
+
+.summary {
+  margin-top: 22px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  background: var(--bg);
+  font-size: 14px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+}
+
+.total {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-weight: 600;
+}
+
+.num {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.privacy {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.back {
+  margin-top: 14px;
+  text-align: center;
+}

@@ -157,6 +157,28 @@ const colorLiteral = new RegExp(
   "i",
 );
 
+// D18: alpha of a token is allowed, written exactly as color-mix(in srgb, var(--token) N%, transparent).
+const tokenAlpha = /color-mix\(\s*in srgb\s*,\s*var\(--[\w-]+\)\s+\d+(?:\.\d+)?%\s*,\s*transparent\s*\)/gi;
+
+// design.md §2.7: the WhatsApp bubble's two colors, allowed as literals only in the module that draws the bubble.
+const BUBBLE_MODULE = join("components", "OrderResult.module.css");
+const bubbleColors = (() => {
+  const s27 = md.slice(md.indexOf("### 2.7 "), md.indexOf("## 3. "));
+  const row = s27.split("\n").find((line) => line.includes("WhatsApp message preview bubble"));
+  if (!row) throw new Error("no WhatsApp bubble row in design.md §2.7");
+  return [...row.matchAll(/`(#[0-9a-f]{3,8})`/gi)].map((m) => m[1].toLowerCase());
+})();
+
+/** The color literals a CSS module's declaration values hold, after the D18 exceptions for `file`. */
+function cssLiterals(file: string, source: string) {
+  const allowed = file === BUBBLE_MODULE ? bubbleColors : [];
+  // Declaration values only, so a selector such as .white is not a hit.
+  const values = [...source.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/:\s*([^;{}]+)(?=[;}])/g)].map((m) => m[1]);
+  return values
+    .map((v) => v.replace(tokenAlpha, "").replace(/#[0-9a-f]{3,8}\b/gi, (hex) => (allowed.includes(hex.toLowerCase()) ? "" : hex)))
+    .filter((v) => colorLiteral.test(v));
+}
+
 describe("components reference tokens only (design.md §2)", () => {
   const modules = srcFiles.filter((f) => f.endsWith(".module.css"));
   const components = srcFiles.filter((f) => f.endsWith(".tsx"));
@@ -167,10 +189,7 @@ describe("components reference tokens only (design.md §2)", () => {
   });
 
   it.each(modules)("src/%s has no color literal", (file) => {
-    const source = read(join("src", file)).replace(/\/\*[\s\S]*?\*\//g, "");
-    // Declaration values only, so a selector such as .white is not a hit.
-    const values = [...source.matchAll(/:\s*([^;{}]+)(?=[;}])/g)].map((m) => m[1]);
-    expect(values.filter((v) => colorLiteral.test(v))).toEqual([]);
+    expect(cssLiterals(file, read(join("src", file)))).toEqual([]);
   });
 
   // SVG paint attributes and color properties of style objects.
@@ -179,5 +198,41 @@ describe("components reference tokens only (design.md §2)", () => {
       /\b(?:fill|stroke|stopColor|floodColor|lightingColor|color|background(?:Color)?|border\w*Color|outlineColor|caretColor|accentColor|textDecorationColor|boxShadow|textShadow)\s*[=:]\s*\{?\s*(["'`])(.*?)\1/g;
     const values = [...read(join("src", file)).matchAll(paint)].map((m) => m[2]);
     expect(values.filter((v) => colorLiteral.test(v))).toEqual([]);
+  });
+});
+
+describe("D18 exceptions (milestone plan §4.8)", () => {
+  const other = join("components", "Field.module.css");
+
+  it("reads the two bubble colors from design.md §2.7", () => {
+    expect(bubbleColors).toEqual(["#dcf8c6", "#111b21"]);
+  });
+
+  it("the bubble module exists, so the allow-list points at a real file", () => {
+    expect(srcFiles).toContain(BUBBLE_MODULE);
+  });
+
+  it.each([
+    ["alpha of a token", ".a { box-shadow: 0 0 0 3px color-mix(in srgb, var(--link) 22%, transparent); }"],
+    ["alpha of a token, decimal percent", ".a { border-color: color-mix(in srgb, var(--ink) 7.5%, transparent); }"],
+  ])("accepts %s", (_, source) => {
+    expect(cssLiterals(other, source)).toEqual([]);
+  });
+
+  it.each(bubbleColors)("accepts §2.7 %s in the bubble module", (hex) => {
+    expect(cssLiterals(BUBBLE_MODULE, `.b { background: ${hex}; }`)).toEqual([]);
+  });
+
+  it.each([
+    ["a §2.7 bubble color in another module", other, ".a { background: #dcf8c6; }"],
+    ["the other §2.7 bubble color in another module", other, ".a { color: #111B21; }"],
+    ["a non-§2.7 literal in the bubble module", BUBBLE_MODULE, ".b { background: #dcf8c7; }"],
+    ["a named color in the bubble module", BUBBLE_MODULE, ".b { color: white; }"],
+    ["color-mix with a literal color", other, ".a { color: color-mix(in srgb, #ff0000 20%, transparent); }"],
+    ["color-mix of a token with a literal instead of transparent", other, ".a { color: color-mix(in srgb, var(--ink) 20%, white); }"],
+    ["color-mix of two tokens", other, ".a { color: color-mix(in srgb, var(--ink) 20%, var(--bg)); }"],
+    ["color-mix in another color space", other, ".a { color: color-mix(in oklch, var(--ink) 20%, transparent); }"],
+  ])("rejects %s", (_, file, source) => {
+    expect(cssLiterals(file, source)).not.toEqual([]);
   });
 });

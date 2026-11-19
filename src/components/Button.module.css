@@ -110,6 +110,15 @@
   color: var(--on-accent);
 }
 
+.whatsapp {
+  background: var(--whatsapp);
+  color: var(--on-whatsapp);
+}
+
+.whatsapp:hover {
+  background: var(--whatsapp-hover);
+}
+
 /* Lift only where hover exists: on touch it would stick after the tap. */
 @media (hover: hover) {
   .primary:hover,
@@ -133,4 +142,23 @@
 
 .text::before {
   inset: -13px 0;
+}
+
+/* design.md §5 Disabled: avoided where possible ("Lanjut isi data" with blocked lines, the pending submit).
+   No lift, press or hover color. */
+.btn:disabled,
+.btn:disabled:hover,
+.btn:disabled:active {
+  opacity: 0.45;
+  cursor: not-allowed;
+  translate: none;
+  scale: none;
+}
+
+.primary:disabled:hover {
+  background: var(--blue);
+}
+
+.whatsapp:disabled:hover {
+  background: var(--whatsapp);
 }

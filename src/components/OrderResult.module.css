@@ -1,0 +1,55 @@
+/* design.md §6 Cart sheet, step 3. The bubble's two colors are the §2.7 literals, allowed only in this file (D18). */
+.done {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 40px 0 16px;
+  text-align: center;
+}
+
+.burst {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  clip-path: var(--burst);
+  color: var(--on-accent);
+  font-size: 30px;
+}
+
+.ok {
+  background: var(--mint);
+}
+
+.fail {
+  background: var(--butter);
+  font-weight: 700;
+}
+
+.title {
+  font-size: 24px;
+}
+
+.text {
+  max-width: 32ch;
+  color: var(--muted);
+}
+
+.bubble {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 10px;
+  padding: 14px 16px;
+  border-radius: 14px 14px 14px 4px;
+  background: #dcf8c6;
+  color: #111b21;
+  font: 400 13px/1.5 var(--body);
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.back {
+  margin-top: 14px;
+  text-align: center;
+}

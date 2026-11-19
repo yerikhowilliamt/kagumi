@@ -23,6 +23,8 @@ type Store = {
   addToCart: (id: string, qty: number) => void;
   setLineQty: (id: string, qty: number) => void;
   removeFromCart: (id: string) => void;
+  /** Only after a saved checkout: a failed one keeps the cart (FR14). */
+  clearCart: () => void;
   /** `key` changes on every show, so the same text restarts the toast's timer. */
   toast: { text: string; key: number } | null;
   hideToast: () => void;
@@ -114,6 +116,7 @@ export default function StoreProvider({
     },
     setLineQty: (id, qty) => save(setQty(lines, id, qty)),
     removeFromCart: (id) => save(removeLine(lines, id)),
+    clearCart: () => save([]),
     toast,
     hideToast,
   };

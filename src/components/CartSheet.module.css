@@ -1,4 +1,4 @@
-/* design.md §6 Cart sheet, step 1. The panel itself (side, full width on mobile) is Dialog's `side` variant. */
+/* design.md §6 Cart sheet: shared header, step 1, and the body and footer of steps 2 and 3. The panel itself (side, full width on mobile) is Dialog's `side` variant. */
 
 /* Right padding leaves room for Dialog's ✕ (38px at top 20px, right 20px). */
 .head {
@@ -135,4 +135,41 @@
   font-size: 18px;
   font-weight: 600;
   color: var(--ink);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Rejected or closed line (FR12, D21). */
+.alert {
+  margin: 16px 0 4px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dim {
+  opacity: 0.5;
+}
+
+.reason {
+  max-width: 110px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--error);
+  text-align: right;
+}
+
+.next {
+  margin-top: 14px;
+}
+
+.title:focus {
+  outline: none;
 }
