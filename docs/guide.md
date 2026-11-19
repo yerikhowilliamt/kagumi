@@ -1,14 +1,14 @@
 # Developer Guide: Kagumi Dough
 
-**Status:** Current as of M0 Foundation (2026-11-16)
+**Status:** Current as of M1 Storefront + checkout (closed 2026-11-19)
 
-Every command in this guide was run during M0 or is a script in `package.json`. When the guide and `package.json` differ, `package.json` is right and the guide is corrected. A new command is added here only after it has been run.
+Every command in this guide was run during M0 or M1 or is a script in `package.json`. When the guide and `package.json` differ, `package.json` is right and the guide is corrected. A new command is added here only after it has been run.
 
 ## 1. Project Overview
 
 Kagumi Dough is the website of a homemade bakery in Surakarta (Solo): a storefront with a cart that sends one prefilled WhatsApp order, and an admin dashboard for products and media, orders and statistics.
 
-M0 built the foundation: design tokens and the theme toggle, the full database schema with one migration, and a development seed. M1 builds the storefront on it. So far that is the shared order rules in `src/lib`, a statically rendered home page with the navigation, hero, product-name marquee, how-to-order steps, CTA band and footer, the menu with filter chips and product cards, the product detail dialog, and the cart (sheet, toast, mobile cart bar and nav cart button, kept in `localStorage`). Checkout follows in the later M1 tasks.
+M0 built the foundation: design tokens and the theme toggle, the full database schema with one migration, and a development seed. M1 builds the storefront on it. So far that is the shared order rules in `src/lib`, a statically rendered home page with the navigation, hero, product-name marquee, how-to-order steps, CTA band and footer, the menu with filter chips and product cards, the product detail dialog, the cart (sheet, toast, mobile cart bar and nav cart button, kept in `localStorage`), and checkout: the `createOrder` Server Action writes the order in one transaction with a per-visitor rate limit, and the cart sheet's form opens the prefilled WhatsApp message in the same tab, also when saving fails. M2 adds the admin.
 
 **Stack**
 
