@@ -39,6 +39,9 @@ export default function CheckoutForm({
   today,
   values,
   onChange,
+  pending,
+  start,
+  stop,
   onBack,
   onRejected,
   onItemsInvalid,
@@ -49,15 +52,17 @@ export default function CheckoutForm({
   today: string;
   values: CheckoutValues;
   onChange: (values: CheckoutValues) => void;
+  /** Owned by the sheet, so leaving and reopening the form can't start a second submit (BSA-M1.7-01). */
+  pending: boolean;
+  /** Marks the sheet pending; false when a submit is already running. */
+  start: () => boolean;
+  stop: () => void;
   onBack: () => void;
   onRejected: (lines: Extract<CreateOrderResult, { error: "rejected" }>["lines"]) => void;
   onItemsInvalid: () => void;
   onOutcome: (outcome: OrderOutcome) => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  // A ref as well as state: a second click can land before the disabled button renders (K3).
-  const pendingRef = useRef(false);
-  const [pending, setPending] = useState(false);
   const [errors, setErrors] = useState<Fields>({});
   const [rateLimited, setRateLimited] = useState(false);
   const set = (patch: Partial<CheckoutValues>) => onChange({ ...values, ...patch });
@@ -75,7 +80,6 @@ export default function CheckoutForm({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (pendingRef.current) return;
     const input = {
       ...values,
       address: values.fulfillment === "DELIVERY" ? values.address : undefined,
@@ -90,14 +94,12 @@ export default function CheckoutForm({
       }
       return showErrors(fields);
     }
+    if (!start()) return;
     setErrors({});
     setRateLimited(false);
-    pendingRef.current = true;
-    setPending(true);
     // One path for a thrown request and a "server" result (task note 5, D2).
     const result = await createOrder(input).catch((): CreateOrderResult => ({ ok: false, error: "server" }));
-    pendingRef.current = false;
-    setPending(false);
+    stop();
     if (result.ok) return onOutcome({ orderNumber: result.orderNumber, message: textOf(result.waUrl), url: result.waUrl });
     switch (result.error) {
       case "validation":
@@ -118,7 +120,8 @@ export default function CheckoutForm({
     <>
       <form ref={formRef} id="checkout-form" className={sheet.body} noValidate onSubmit={submit}>
         {rateLimited && (
-          <p className={styles.alert} role="alert">
+          // Scrolled into view: the form may be scrolled past its top (TR-M1.7-03).
+          <p className={styles.alert} role="alert" ref={(el) => el?.scrollIntoView({ block: "nearest" })}>
             Terlalu banyak percobaan. Coba lagi beberapa menit lagi, atau{" "}
             <a href={`https://wa.me/${SHOP_WHATSAPP}`}>chat kami langsung di WhatsApp</a>.
           </p>
@@ -216,7 +219,7 @@ export default function CheckoutForm({
         </Button>
         <p className={styles.privacy}>Data kamu hanya dipakai untuk memproses pesanan ini.</p>
         <p className={styles.back}>
-          <Button variant="text" onClick={onBack}>
+          <Button variant="text" onClick={onBack} disabled={pending}>
             ← Kembali ke keranjang
           </Button>
         </p>

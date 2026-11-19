@@ -170,6 +170,11 @@ test("rejected, then the happy path: same tab to WhatsApp, one request, cart cle
   await expect(line(page, "Nastar").getByText("Order sudah ditutup")).toBeVisible();
   await expect(line(page, "Nastar").getByRole("button", { name: /Kurangi|Tambah/ })).toHaveCount(0);
   await expect(next(page)).toBeDisabled();
+  // The server's reason survives closing and reopening (the browser alone thinks Nastar is open, BSA-M1.7-03).
+  await page.keyboard.press("Escape");
+  await cartButton(page).click();
+  await expect(line(page, "Nastar").getByText("Order sudah ditutup")).toBeVisible();
+  await expect(next(page)).toBeDisabled();
   await line(page, "Nastar").getByRole("button", { name: "Hapus Nastar" }).click();
   await expect(next(page)).toBeEnabled();
   expect(actions).toHaveLength(1);
@@ -227,9 +232,67 @@ test("the server action fails: not-saved state, fallback message, same tab, cart
   await expect(s.getByText(/KD-\d/)).toHaveCount(0);
   expect(await bubble(page)).toBe(message([]));
   await expect(s.getByRole("link", { name: "Kirim via WhatsApp" })).toHaveAttribute("href", url);
+  await expect(s.getByRole("heading", { name: "Kirim pesanan" })).toBeFocused(); // TR-M1.7-04
+  // Reopening starts at the cart, which is unchanged (approved 2026-11-19, BSA-M1.7-06).
+  await page.keyboard.press("Escape");
+  await cartButton(page).click();
+  await expect(sheet(page).getByRole("heading", { name: "Keranjang" })).toBeVisible();
+  await expect(line(page, "Bolu Gulung")).toBeVisible();
   await page.reload();
   await expect(cartButton(page)).toHaveAccessibleName("Buka keranjang, 2 item");
   expect(await stored(page)).toBe(before);
+});
+
+test("while a submit is pending: no second request by any path, and a closed sheet reopens on the result (BSA-M1.7-01, -02)", async ({ page }) => {
+  const actions: string[] = [];
+  page.on("request", (r) => r.method() === "POST" && r.headers()["next-action"] && actions.push(r.url()));
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  // The first action request is held, then aborted: nothing is written.
+  await page.route("**/*", async (route) => {
+    if (!isAction(route)) return route.fallback();
+    await released;
+    return route.abort();
+  });
+  const wa = await stubWhatsApp(page);
+  await page.goto("/");
+  await add(page, "Kastengel", 1);
+  await toForm(page);
+  await fill(page);
+  await submit(page).click();
+  const s = sheet(page);
+  await expect(submit(page)).toHaveText("Mengirim…");
+  await expect(submit(page)).toBeDisabled();
+  await expect(s.getByRole("button", { name: "← Kembali ke keranjang" })).toBeDisabled();
+  // Close and reopen: the sheet is still on the pending form, and a forced submit sends nothing.
+  await page.keyboard.press("Escape");
+  await cartButton(page).click();
+  await expect(s.getByRole("heading", { name: "Data pemesan" })).toBeVisible();
+  await expect(submit(page)).toBeDisabled();
+  await s.locator("form").evaluate((form: HTMLFormElement) => form.requestSubmit());
+  // Closed again while pending: the result opens the sheet before WhatsApp.
+  await page.keyboard.press("Escape");
+  await expect(sheet(page)).toHaveCount(0);
+  release();
+  await expect(sheet(page).getByRole("heading", { name: "Pesanan belum tercatat di sistem kami" })).toBeVisible();
+  await expect.poll(() => wa.length).toBe(1);
+  expect(actions).toHaveLength(1);
+});
+
+test("a server validation result shows its field message and focuses the field (TR-M1.7-05, BSA-M1.7-04)", async ({ page }) => {
+  // The browser's date passes the schema, the server's real date does not: validation writes nothing (D5).
+  await page.clock.setFixedTime(new Date(BEFORE_NASTAR_DEADLINE));
+  await page.goto("/");
+  await add(page, "Kastengel", 1);
+  await toForm(page);
+  await fill(page);
+  await sheet(page).getByLabel("Tanggal diminta").fill("2026-11-01");
+  await submit(page).click();
+  const date = sheet(page).getByLabel("Tanggal diminta");
+  await expect(date).toHaveAccessibleDescription(/Tanggal tidak boleh sebelum hari ini\./);
+  await expect(date).toHaveAttribute("aria-invalid", "true");
+  await expect(date).toBeFocused();
+  await expect(submit(page)).toHaveText("Kirim pesanan via WhatsApp");
 });
 
 test("the sixth checkout of a visitor shows the rate-limit alert and keeps the form (K6)", async ({ page }, info) => {
@@ -259,6 +322,9 @@ test("the sixth checkout of a visitor shows the rate-limit alert and keeps the f
   const alert = s.getByRole("alert");
   await expect(alert).toHaveText("Terlalu banyak percobaan. Coba lagi beberapa menit lagi, atau chat kami langsung di WhatsApp.");
   await expect(alert.getByRole("link", { name: "chat kami langsung di WhatsApp" })).toHaveAttribute("href", SHOP);
+  // Same tab (approved 2026-11-19, BSA-M1.7-06) and visible above a scrolled form (TR-M1.7-03).
+  await expect(alert.getByRole("link")).not.toHaveAttribute("target");
+  await expect(alert).toBeInViewport();
   await expect(s.getByLabel("Nama", { exact: true })).toHaveValue(NAME);
   await expect(s.getByLabel("Nomor WhatsApp")).toHaveValue(PHONE);
   await expect(s.getByLabel("Tanggal diminta")).toHaveValue(LATER);

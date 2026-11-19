@@ -21,7 +21,7 @@ const REASONS: Record<Reason, string> = { closed: "Order sudah ditutup", unavail
 
 // design.md §6 Cart sheet: cart → form → result in one dialog (FR8–FR14).
 export default function CartSheet() {
-  const { lines, products, today, cartOpen, closeCart, setLineQty, removeFromCart, clearCart } = useStore();
+  const { lines, products, today, cartOpen, openCart, closeCart, setLineQty, removeFromCart, clearCart } = useStore();
   const titleId = useId();
   const titleRef = useRef<HTMLHeadingElement>(null);
   const [step, setStep] = useState<Step>("cart");
@@ -30,6 +30,14 @@ export default function CartSheet() {
   const [rejected, setRejected] = useState<ReadonlyMap<string, Reason>>(new Map());
   const [itemsInvalid, setItemsInvalid] = useState(false);
   const [outcome, setOutcome] = useState<OrderOutcome | null>(null);
+  // One submit at a time for the whole sheet, whatever step or open state it passes through (BSA-M1.7-01).
+  // A ref as well as state: a second click can land before the disabled button renders (K3).
+  const pendingRef = useRef(false);
+  const [pending, setPending] = useState(false);
+  const setBusy = (busy: boolean) => {
+    pendingRef.current = busy;
+    setPending(busy);
+  };
 
   const items = lines.flatMap((line) => {
     const product = products.find((p) => p.id === line.id);
@@ -64,10 +72,13 @@ export default function CartSheet() {
       open={cartOpen}
       onClose={() => {
         closeCart();
-        // Reopening starts at the cart: emptied after a saved order, unchanged after a failed one.
-        setStep("cart");
-        setOutcome(null);
-        setItemsInvalid(false);
+        // Reopening starts at the cart: emptied after a saved order, unchanged after a failed one. While a submit is
+        // pending it reopens on the pending form instead, and the result opens the sheet itself (BSA-M1.7-02).
+        if (!pendingRef.current) {
+          setStep("cart");
+          setOutcome(null);
+          setItemsInvalid(false);
+        }
         // The opener may be gone (the cart bar unmounts when the cart empties): the browser then leaves focus on
         // <body> or on a control inside the closed sheet ("Lihat menu"), so it goes to the nav cart button (TR-M1.5-08).
         const focused = document.activeElement;
@@ -115,6 +126,13 @@ export default function CartSheet() {
           today={today}
           values={values}
           onChange={setValues}
+          pending={pending}
+          start={() => {
+            if (pendingRef.current) return false;
+            setBusy(true);
+            return true;
+          }}
+          stop={() => setBusy(false)}
           onBack={() => go("cart")}
           onRejected={(bad) => {
             setRejected(new Map(bad.map((line) => [line.productId, line.reason])));
@@ -127,7 +145,9 @@ export default function CartSheet() {
           onOutcome={(result) => {
             if (result.orderNumber) clearCart();
             setOutcome(result);
-            setStep("result");
+            // Shown before WhatsApp opens, also when the sheet was closed while the request was pending.
+            openCart();
+            go("result");
           }}
         />
       ) : (
