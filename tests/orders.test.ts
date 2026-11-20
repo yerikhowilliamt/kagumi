@@ -24,6 +24,12 @@ describe("parseOrderQuery (D16 URL)", () => {
     expect(parseOrderQuery({ page }).page).toBe(1);
   });
 
+  it("drops U+0000 from q, so a NUL ends in a normal search (BSA-M2.4-02)", () => {
+    expect(parseOrderQuery({ q: "a\u0000b" }).q).toBe("ab");
+    expect(parseOrderQuery({ q: "\u0000" }).q).toBe("");
+    expect(parseOrderQuery({ q: " \u0000 rina \u0000" }).q).toBe("rina");
+  });
+
   it("takes the first value of a repeated parameter", () => {
     expect(parseOrderQuery({ status: ["NEW", "CANCELLED"], q: ["a", "b"], page: ["3", "4"] })).toEqual({
       status: "NEW",

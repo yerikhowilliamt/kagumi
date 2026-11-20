@@ -1,0 +1,13 @@
+/* error.tsx stands alone: the admin layout that pads a page may be the part that failed. */
+.error {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 64px 16px;
+}
+
+/* The admin page title of pesanan/page.module.css */
+.title {
+  margin: 0 0 20px;
+  font: 600 clamp(26px, 3vw, 34px) / 1.15 var(--head);
+  letter-spacing: -0.02em;
+}

@@ -1,4 +1,4 @@
-import { devices, expect, test as base, type Page } from "@playwright/test";
+import { devices, expect, test as base, type Page, type Request } from "@playwright/test";
 import { formatDateLong } from "../src/lib/order";
 import { loginAs } from "./admin";
 
@@ -126,6 +126,8 @@ test("a storefront order: its detail, a status change in the picker, the history
   await expect(historyItems(page)).toHaveCount(2);
   await expect(historyItems(page).first()).toContainText("oleh Admin");
   await expect(historyItems(page).last()).toContainText("Pesanan masuk");
+  // History times read like the list's "Masuk" column (D18, O6; BSA-M2.5-01).
+  await expect(historyItems(page).locator("time")).toHaveText([/^Hari ini, ([01]\d|2[0-3])\.[0-5]\d$/, /^Hari ini, ([01]\d|2[0-3])\.[0-5]\d$/]);
   await expect(statusBar(page)).toBeVisible();
 
   // K8: keyboard. From the chat link, Tab reaches the options in order; Enter and Space change the status.
@@ -158,12 +160,89 @@ test("a storefront order: its detail, a status change in the picker, the history
   await expect(entry).toHaveText("Dikonfirmasi");
 });
 
-test("a bad or unknown id is the 404 page with a session (K7)", async ({ page }) => {
+// What the owner sees while the action runs, when it never answers, and when another tab got there first.
+test("the picker says it is saving, confirms, survives a dropped request and catches up with another tab", async ({ page }) => {
+  const id = await checkout(page);
+  await loginAs(page, "detail");
+  const url = `/admin/pesanan/${id}`;
+  await page.goto(url);
+  const isAction = (request: Request) => request.method() === "POST" && request.headers()["next-action"] !== undefined;
+  const saved = page.getByRole("status").filter({ hasText: "Status diubah" });
+  const alert = page.getByRole("alert").filter({ hasText: "belum tersimpan" });
+
+  // Saving: the action is held at the network until released, so the pending state is observed, not raced.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(`**${url}`, async (route) => {
+    if (!isAction(route.request())) return route.fallback();
+    await held;
+    return route.continue();
+  });
+  await option(page, "Dikonfirmasi").click();
+  await expect(picker(page)).toHaveAttribute("aria-busy", "true");
+  await expect(option(page, "Dikonfirmasi").getByText("Menyimpan…")).toBeVisible();
+  await expect(option(page, "Baru")).toHaveAttribute("aria-pressed", "true");
+  await expect(saved).toHaveCount(0);
+  release();
+  await expectPicked(page, "Dikonfirmasi");
+  await expect(saved).toHaveText("Status diubah ke Dikonfirmasi.");
+  // Announced to a screen reader only: the pressed option and the history row are what the owner sees.
+  await expect(saved).toHaveCSS("width", "1px");
+  await expect(picker(page).getByText("Menyimpan…")).toHaveCount(0);
+  await page.unroute(`**${url}`);
+
+  // A dropped request: the alert, on the same page, with nothing changed. Then the retry goes through.
+  await page.route(`**${url}`, (route) => (isAction(route.request()) ? route.abort("failed") : route.fallback()));
+  await option(page, "Selesai").click();
+  await expect(alert).toHaveText("Status belum tersimpan. Coba lagi.");
+  await expect(option(page, "Dikonfirmasi")).toHaveAttribute("aria-pressed", "true");
+  await expect(saved).toHaveCount(0);
+  await expect(historyItems(page)).toHaveCount(2);
+  await page.unroute(`**${url}`);
+  await option(page, "Selesai").click();
+  await expectPicked(page, "Selesai");
+  await expect(alert).toHaveCount(0);
+  await expect(saved).toHaveText("Status diubah ke Selesai.");
+
+  // Another tab sets "Dibatalkan". This page still shows "Selesai"; picking what the server already has changes
+  // nothing there, so the page asks for its data again instead of staying wrong.
+  const other = await page.context().newPage();
+  await other.goto(url);
+  await option(other, "Dibatalkan").click();
+  await expectPicked(other, "Dibatalkan");
+  await other.close();
+  await expect(option(page, "Selesai")).toHaveAttribute("aria-pressed", "true");
+  await option(page, "Dibatalkan").click();
+  await expectPicked(page, "Dibatalkan");
+  await expect(historyItems(page)).toHaveCount(4);
+  await expect(saved).toHaveCount(0);
+
+  // BSA-M2.5-02: another tab sets "Baru"; this page still shows "Dibatalkan" pressed. Tapping that stale option
+  // still reaches the server, which sets "Dibatalkan" again.
+  const third = await page.context().newPage();
+  await third.goto(url);
+  await option(third, "Baru").click();
+  await expectPicked(third, "Baru");
+  await third.close();
+  await expect(option(page, "Dibatalkan")).toHaveAttribute("aria-pressed", "true");
+  await option(page, "Dibatalkan").click();
+  await expect(historyItems(page)).toHaveCount(6);
+  await expectPicked(page, "Dibatalkan");
+});
+
+test("a bad or unknown id is the 404 page with a session, in the stored theme (K7)", async ({ page }) => {
+  // The 404 is rendered in the browser, where the <head> theme script never runs; ThemeToggle applies it instead.
+  await page.addInitScript(() => window.localStorage.setItem("kagumi-theme", "dark"));
   await loginAs(page, "detail");
   for (const id of ["abc", "0", "999999999", "1e3", "-1", "0123456789"]) {
     const response = await page.goto(`/admin/pesanan/${id}`);
     expect(response?.status(), id).toBe(404);
   }
+  // The admin's own 404 inside the shell, with a way back to the list.
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("tidak ditemukan");
+  await expect(page.locator("main").getByRole("link")).toHaveAttribute("href", "/admin/pesanan");
+  await expect(statusBar(page)).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
 test("without a session the detail redirects to the login (K7)", async ({ page }) => {

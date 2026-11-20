@@ -1,4 +1,5 @@
 import Link from "next/link";
+import LinkPending from "@/components/LinkPending";
 import OrderStatusBadge, { STATUS_LABEL } from "@/components/OrderStatusBadge";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -9,7 +10,8 @@ import styles from "./page.module.css";
 const FULFILLMENT = { DELIVERY: "Diantar", PICKUP: "Ambil" } as const;
 const CHIPS = [{ status: null, label: "Semua" }, ...ORDER_STATUSES.map((status) => ({ status, label: STATUS_LABEL[status] }))];
 
-// FR28, FR30, System Design §4.9 List, M2 plan D5 and D16. Every control is a GET form or a link: no client JS.
+// FR28, FR30, System Design §4.9 List, M2 plan D5 and D16. Every control is a GET form or a link and works with no
+// client JS; LinkPending only marks the link whose page is loading.
 export default async function OrdersPage({ searchParams }: PageProps<"/admin/pesanan">) {
   await requireAdmin();
   const query = parseOrderQuery(await searchParams);
@@ -83,6 +85,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/admin/pes
                     <td>
                       {/* Its ::after covers the row, so the whole row is one link and one Tab stop. */}
                       <Link className={styles.rowLink} href={detail(order.id)}>
+                        <LinkPending />
                         {formatOrderNumber(order.id)}
                       </Link>
                     </td>
@@ -105,6 +108,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/admin/pes
             {list.rows.map((order) => (
               <li key={order.id}>
                 <Link className={styles.card} href={detail(order.id)}>
+                  <LinkPending />
                   <span className={styles.info}>
                     <strong>{order.customerName}</strong>
                     <span className={styles.meta}>
@@ -127,7 +131,9 @@ export default async function OrdersPage({ searchParams }: PageProps<"/admin/pes
           {list.pageCount > 1 && (
             <nav className={styles.pages} aria-label="Halaman pesanan">
               {list.page > 1 ? (
-                <Link href={orderListHref({ ...query, page: list.page - 1 })}>← Sebelumnya</Link>
+                <Link href={orderListHref({ ...query, page: list.page - 1 })}>
+                  <LinkPending />← Sebelumnya
+                </Link>
               ) : (
                 <span />
               )}
@@ -135,7 +141,10 @@ export default async function OrdersPage({ searchParams }: PageProps<"/admin/pes
                 Halaman {list.page} dari {list.pageCount}
               </span>
               {list.page < list.pageCount ? (
-                <Link href={orderListHref({ ...query, page: list.page + 1 })}>Berikutnya →</Link>
+                <Link href={orderListHref({ ...query, page: list.page + 1 })}>
+                  <LinkPending />
+                  Berikutnya →
+                </Link>
               ) : (
                 <span />
               )}

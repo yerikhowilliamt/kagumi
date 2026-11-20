@@ -266,6 +266,7 @@ Sizes: storefront 50px (nav 42px), admin 42px, sheet/detail 46px, small 34px. Fu
 - **Pressed:** `scale: .97` on pointer-down, on every button.
 - **Hit area:** controls under 44px (steppers, close, icon buttons, text buttons, media remove) keep their size and extend the hit area to about 44px with a pseudo-element.
 - **Disabled:** opacity .45, `not-allowed`. Avoid where possible. A closed product shows a dashed, muted add button instead.
+- **Pending (admin):** while a status change is saving or a link's page is loading, the control that was used takes a 1px dashed `--ink` border (a text link: a dashed underline) and, where it fits, a muted "Menyimpan…". The other controls of the same group or list drop to opacity .55, and the cursor is `progress`. The admin has no loading screens, so this is the only loading feedback. Dashed means "closed" on the storefront and "working" in the admin; the two never share a screen. A finished status change is announced through a visually hidden `role="status"` line: the pressed option and the new history row are what the owner sees.
 
 ### Theme toggle
 
@@ -430,7 +431,7 @@ Rows: time (head 12px `--muted`, tabular) · title (head 13px/600) + detail (12p
 
 ### Tables
 
-Header cells are micro-labels with a bottom hairline. Body cells have 14px padding and hairline separators. Clickable rows highlight in `--surface-2`; rows and mobile cards are focusable and open on Enter. Numeric columns right-aligned and tabular. The product cell is a 44px thumb (`r-sm`) + name (head 14px/600) + meta (12px `--muted`). Below 760px, tables are replaced by **mobile cards** (`--surface`, 1px `--line`, radius 16px, 56px thumb, name + meta line + status badge).
+Header cells are micro-labels with a bottom hairline. Body cells have 14px padding and hairline separators. Clickable rows highlight in `--surface-2`; rows and mobile cards are focusable and open on Enter, and a mobile card shows `--surface-2` while it is pressed. Numeric columns right-aligned and tabular. The product cell is a 44px thumb (`r-sm`) + name (head 14px/600) + meta (12px `--muted`). Below 760px, tables are replaced by **mobile cards** (`--surface`, 1px `--line`, radius 16px, 56px thumb, name + meta line + status badge).
 
 ### Toolbar
 

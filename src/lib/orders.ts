@@ -32,13 +32,16 @@ const Q_MAX = 80;
 
 const first = (value: string | string[] | undefined) => (Array.isArray(value) ? value[0] : value) ?? "";
 
-/** An unknown status means all; q is trimmed and cut to 80 characters; page is an integer ≥ 1, otherwise 1. */
+/**
+ * An unknown status means all; q is trimmed and cut to 80 characters, without U+0000 (Postgres rejects it in a
+ * parameter, BSA-M2.4-02; no name holds one); page is an integer ≥ 1, otherwise 1.
+ */
 export function parseOrderQuery(params: Record<string, string | string[] | undefined>): OrderQuery {
   const status = first(params.status);
   const page = first(params.page);
   return {
     status: (ORDER_STATUSES as readonly string[]).includes(status) ? (status as OrderStatus) : null,
-    q: first(params.q).trim().slice(0, Q_MAX).trim(),
+    q: first(params.q).replaceAll("\0", "").trim().slice(0, Q_MAX).trim(),
     page: /^[1-9]\d{0,8}$/.test(page) ? Number(page) : 1,
   };
 }

@@ -333,7 +333,7 @@ The choices most expensive to reverse are recorded as ADRs: [ADR-0001](adrs/0001
 
 - **Admin boundary:** see 4.4. Every server entry point checks the session itself.
 - **Public write endpoints** (checkout, tracking): Zod validation, server-side re-pricing and product checks, per-visitor rate limits, no trust in client-sent prices or names.
-- **Personal data:** orders hold names, WhatsApp numbers, addresses and notes. They're visible only in the admin. They never appear in URLs, logs or analytics. Analytics stores only daily-rotating visitor hashes.
+- **Personal data:** orders hold names, WhatsApp numbers, addresses and notes. They're visible only in the admin. They never appear in URLs, logs or analytics, with one exception: the admin's own search term in the order list URL (`/admin/pesanan?q=…`, behind the login and `noindex`), which the browser history and the hosting request logs may keep (BSA-M2.4-01, decided by the user 2026-11-21). Analytics stores only daily-rotating visitor hashes.
 - **XSS:** React escapes output. The WhatsApp message is built server-side and URL-encoded. No `dangerouslySetInnerHTML` with user or admin content.
 - **Secrets** (Vercel env only, never shipped to the client): `DATABASE_URL`, `DIRECT_URL`, `CLOUDINARY_API_SECRET`, `TRACKING_SECRET`, `CRON_SECRET`, `ADMIN_EMAIL`/`ADMIN_PASSWORD` (seed only). Only `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` and the WhatsApp number are public.
 - **Uploads:** only signed uploads, signatures only for a logged-in admin, response signature and limits verified before saving (4.5).

@@ -15,11 +15,26 @@
 }
 
 .crumb a {
+  position: relative;
   color: inherit;
+  text-decoration: none; /* as in the approved preview */
+}
+
+/* design.md §5 Hit area: a text link keeps its size and is tapped on about 44px. */
+.crumb a::after {
+  content: "";
+  position: absolute;
+  inset: -12px -8px;
 }
 
 .crumb a:hover {
   color: var(--ink);
+}
+
+/* LinkPending */
+.crumb a:has([data-pending]) {
+  text-decoration: underline dashed;
+  cursor: progress;
 }
 
 .title {
@@ -89,6 +104,10 @@
   gap: 12px;
   padding: 12px 0;
   font-size: 14px;
+}
+
+.lines li + li {
+  border-top: 1px solid var(--line);
 }
 
 .thumb {

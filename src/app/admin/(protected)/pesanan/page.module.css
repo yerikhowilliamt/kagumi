@@ -135,7 +135,22 @@
 
 .table tbody tr {
   position: relative;
-  transition: background 0.15s;
+  transition:
+    background 0.15s,
+    opacity 0.15s ease-out;
+}
+
+/* LinkPending: the row whose order is loading stays lit and the others step back, as in the status picker. */
+.table tbody tr:has([data-pending]) {
+  background: var(--surface-2);
+}
+
+.table tbody:has([data-pending]) tr:not(:has([data-pending])) {
+  opacity: 0.55;
+}
+
+.rowLink:has([data-pending])::after {
+  cursor: progress;
 }
 
 .table tbody tr:last-child td {
@@ -187,6 +202,22 @@
   background: var(--surface);
   color: inherit;
   text-decoration: none;
+  transition: opacity 0.15s ease-out;
+}
+
+/* LinkPending on a phone: the tapped card takes the picker's dashed "working on it" edge. */
+.card:has([data-pending]) {
+  border-style: dashed;
+  border-color: var(--ink);
+}
+
+/* Pressed: the card answers the finger before the navigation starts. */
+.card:active {
+  background: var(--surface-2);
+}
+
+.cards:has([data-pending]) .card:not(:has([data-pending])) {
+  opacity: 0.55;
 }
 
 .info {
@@ -224,6 +255,24 @@
 .pages a {
   color: var(--link);
   font-weight: 500;
+  position: relative;
+}
+
+/* design.md §5 Hit area: a text link keeps its size and is tapped on about 44px. */
+.pages a::after {
+  content: "";
+  position: absolute;
+  inset: -12px -8px;
+}
+
+.pages a:has([data-pending]) {
+  text-decoration: underline dashed;
+  cursor: progress;
+}
+
+/* A page link replaces the whole list, so the whole list steps back while the next page loads. */
+:is(.panel, .cards):has(~ .pages [data-pending]) :is(tbody tr, .card) {
+  opacity: 0.55;
 }
 
 @media (max-width: 760px) {

@@ -162,6 +162,34 @@ test("the first row (desktop) or card (360 px) is reached by Tab from the search
   await expect(page).toHaveURL((url) => url.pathname === href);
 });
 
+// Admin pages have no loading.tsx (it would turn the 404 of an unknown order into a 200), so the link says it is opening.
+test("the order being opened is marked while its page loads, and the others step back", async ({ page }) => {
+  await loginAs(page, "orders");
+  const links = page.locator(isDesktop(page) ? "table tbody a" : "main ul > li > a");
+  const first = links.first();
+  const href = await first.getAttribute("href");
+  // Before hydration the link is a plain anchor with no pending state: wait until React owns it.
+  await expect.poll(() => first.evaluate((el) => Object.keys(el).some((key) => key.startsWith("__reactProps")))).toBe(true);
+
+  // The navigation is held at the network until released, so the pending state is observed, not raced.
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(
+    (url) => url.pathname === href,
+    async (route) => {
+      await held;
+      return route.continue();
+    },
+  );
+  await first.click();
+  await expect(first.locator("[data-pending]")).toHaveCount(1);
+  await expect(links.locator("[data-pending]")).toHaveCount(1);
+  await expect(page.locator(isDesktop(page) ? "table tbody tr" : "main ul > li > a").nth(1)).toHaveCSS("opacity", "0.55");
+  await expect(page).toHaveURL((url) => url.pathname === "/admin/pesanan");
+  release();
+  await expect(page).toHaveURL((url) => url.pathname === href);
+});
+
 test.describe("360 px (K7)", () => {
   test.beforeEach(({ page }) => test.skip(isDesktop(page), "mobile-360 project only"));
 

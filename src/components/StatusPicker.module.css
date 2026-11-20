@@ -17,6 +17,14 @@
   font: 500 14px var(--head);
   text-align: left;
   cursor: pointer;
+  transition:
+    scale 0.1s ease-out,
+    opacity 0.15s ease-out;
+}
+
+/* design.md §5 Pressed */
+.option:active {
+  scale: 0.97;
 }
 
 .option[aria-pressed="true"] {
@@ -26,6 +34,39 @@
 
 .option[aria-disabled="true"] {
   cursor: progress;
+}
+
+.option[aria-disabled="true"]:active {
+  scale: none;
+}
+
+/* A phone has no cursor: the tapped option says it is saving and the others step back. */
+.option[aria-disabled="true"]:not([data-saving]) {
+  opacity: 0.55;
+}
+
+.option[data-saving] {
+  border-style: dashed;
+  border-color: var(--ink);
+}
+
+.saving {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 13px;
+}
+
+/* Announced, not shown: the pressed option and the new history row already show the change, and a visible line
+   would push the history down as it arrives. */
+.status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .option i {

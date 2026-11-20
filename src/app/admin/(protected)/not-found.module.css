@@ -1,0 +1,34 @@
+/* The admin 404: the page head of design.md §7, one line and a link back. */
+.page {
+  padding: 24px 0;
+}
+
+.title {
+  margin: 0 0 8px;
+  font: 600 clamp(26px, 3vw, 34px) / 1.15 var(--head);
+  letter-spacing: -0.02em;
+}
+
+.text {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+
+.link {
+  color: var(--link);
+  font: 500 14px var(--head);
+  position: relative;
+}
+
+/* design.md §5 Hit area: a text link keeps its size and is tapped on about 44px. */
+.link::after {
+  content: "";
+  position: absolute;
+  inset: -12px -8px;
+}
+
+/* LinkPending */
+.link:has([data-pending]) {
+  text-decoration: underline dashed;
+  cursor: progress;
+}

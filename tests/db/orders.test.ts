@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertDevelopmentDatabase } from "../../prisma/seed.ts";
 import { jakartaToday } from "@/lib/order";
-import { ORDER_STATUSES, changeOrderStatus, getOrder, listOrders, statusBarCounts, statusCounts, type OrderStatus } from "@/lib/orders";
+import { ORDER_STATUSES, changeOrderStatus, getOrder, listOrders, parseOrderQuery, statusBarCounts, statusCounts, type OrderStatus } from "@/lib/orders";
 
 // setOrderStatus (M2.5 K5): the session is the gate test's job (tests/admin-actions.test.ts), so requireAdmin
 // passes here; revalidatePath needs a Next request, so it is recorded instead.
@@ -286,6 +286,13 @@ describe("listOrders (M2.4, D5, D16)", { timeout: 120_000 }, () => {
     });
   });
 
+  it("a q that held U+0000 searches normally instead of throwing (BSA-M2.4-02)", async () => {
+    await rolledBack(async (tx) => {
+      await expect(listOrders(tx, parseOrderQuery({ q: "\u0000" }))).resolves.toMatchObject({ page: 1 });
+      await expect(listOrders(tx, parseOrderQuery({ q: "a\u0000b" }))).resolves.toMatchObject({ page: 1 });
+    });
+  });
+
   it("with no orders at all: no rows, a total of 0, page 1 of 1 (K8, R11)", async () => {
     await rolledBack(async (tx) => {
       await tx.order.deleteMany({});
@@ -523,6 +530,42 @@ describe("committed fixtures: fault injection, barrier, setOrderStatus (M2.5 K3â
     expect(pairs(await history(db, id))).toEqual(chain);
     // The detail page's order (newest first) is the same chain reversed.
     expect(pairs((await getOrder(db, id))!.statusChanges)).toEqual([...chain].reverse());
+  });
+
+  it("barrier, same status (BSA-M2.5-03): the change that waited sees the new status and writes nothing", async () => {
+    const id = await fixture();
+    let open!: () => void;
+    const aLocked = new Promise<void>((resolve) => (open = resolve));
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let aPid = 0;
+    const a = db.$transaction(async (tx) => {
+      aPid = (await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`)[0].pid;
+      const result = await changeOrderStatus(tx, id, "CONFIRMED");
+      open();
+      await released;
+      return result;
+    }, TX);
+    await aLocked;
+    const b = db.$transaction((tx) => changeOrderStatus(tx, id, "CONFIRMED"), TX);
+    await expect
+      .poll(
+        async () =>
+          Number(
+            (await db.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM pg_stat_activity WHERE ${aPid}::int = ANY(pg_blocking_pids(pid))`)[0].n,
+          ),
+        { timeout: 30_000 },
+      )
+      .toBe(1);
+    release();
+    expect(await Promise.all([a, b])).toEqual([
+      { ok: true, changed: true },
+      { ok: true, changed: false },
+    ]);
+    expect(pairs(await history(db, id))).toEqual([
+      [null, "NEW"],
+      ["NEW", "CONFIRMED"],
+    ]);
   });
 
   it("setOrderStatus: a non-integer or out-of-range id or an unknown status returns validation and writes nothing (K5)", async () => {

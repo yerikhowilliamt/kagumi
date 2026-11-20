@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import styles from "./ThemeToggle.module.css";
 
 // Which icon shows is decided in CSS from data-theme / prefers-color-scheme, so it is right from first paint.
@@ -18,6 +19,19 @@ function toggleTheme() {
 
 /** `label` shows a visible text beside the icon, as the admin sidebar's "Ganti tema" item (M2 plan D22). */
 export default function ThemeToggle({ label }: { label?: string }) {
+  // A notFound() page is sent as an error shell and rendered in the browser, where the <head> theme script never
+  // runs (Next 16, dev and production). Every page with a toggle then applies the stored theme after hydration.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (root.hasAttribute("data-theme")) return;
+    try {
+      const stored = localStorage.getItem("kagumi-theme");
+      if (stored === "light" || stored === "dark") root.setAttribute("data-theme", stored);
+    } catch {
+      // Storage blocked: the system theme stays.
+    }
+  }, []);
+
   return (
     <button
       type="button"

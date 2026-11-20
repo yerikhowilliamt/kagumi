@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Button from "@/components/Button";
+import LinkPending from "@/components/LinkPending";
 import { STATUS_LABEL } from "@/components/OrderStatusBadge";
 import ProductThumb from "@/components/ProductThumb";
 import StatusPicker from "@/components/StatusPicker";
@@ -43,7 +44,11 @@ export default async function OrderPage({ params }: PageProps<"/admin/pesanan/[i
       <div className={styles.head}>
         <div>
           <p className={styles.crumb}>
-            <Link href="/admin/pesanan">Pesanan</Link> / {number}
+            <Link href="/admin/pesanan">
+              <LinkPending />
+              Pesanan
+            </Link>{" "}
+            / {number}
           </p>
           <h1 className={styles.title}>Pesanan {number}</h1>
           <p className={styles.muted}>
