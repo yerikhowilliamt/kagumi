@@ -147,3 +147,17 @@ const wellFormed = (text: string) =>
 
 export const whatsappUrl = (message: string) =>
   `https://wa.me/${SHOP_WHATSAPP}?text=${encodeURIComponent(wellFormed(message))}`;
+
+/** A stored number "6281234567890" as the admin reads it: "0812-3456-7890" (`0` + the digits after `62`, 4-4-rest). */
+export function formatPhone(stored: string) {
+  if (!stored.startsWith("62")) return stored;
+  const local = `0${stored.slice(2)}`;
+  return [local.slice(0, 4), local.slice(4, 8), local.slice(8)].filter(Boolean).join("-");
+}
+
+/** The admin's chat greeting (M2 plan D19): it names the order number and never the customer. */
+export const chatGreeting = (id: number) => `Halo kak, ini Kagumi Dough soal pesanan ${formatOrderNumber(id)} dari website.`;
+
+/** A chat with the customer's number, encoded like whatsappUrl. */
+export const chatUrl = (phone: string, message: string) =>
+  `https://wa.me/${phone}?text=${encodeURIComponent(wellFormed(message))}`;

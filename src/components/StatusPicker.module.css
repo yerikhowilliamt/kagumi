@@ -1,0 +1,60 @@
+/* design.md §7 Order detail: the status picker */
+.picker {
+  display: grid;
+  gap: 8px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 14px var(--head);
+  text-align: left;
+  cursor: pointer;
+}
+
+.option[aria-pressed="true"] {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.option[aria-disabled="true"] {
+  cursor: progress;
+}
+
+.option i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.NEW {
+  background: var(--link);
+}
+
+.CONFIRMED {
+  background: var(--amber);
+}
+
+.COMPLETED {
+  background: var(--success);
+}
+
+.CANCELLED {
+  background: var(--error);
+}
+
+.alert {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 14px;
+}

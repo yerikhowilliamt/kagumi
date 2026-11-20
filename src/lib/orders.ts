@@ -107,3 +107,32 @@ export async function statusCounts(client: Client) {
   }
   return counts;
 }
+
+/** One order for the detail page (M2 plan D18): its fields, its lines in insertion order, its history newest first. */
+export async function getOrder(client: Client, id: number) {
+  const order = await client.order.findUnique({
+    where: { id },
+    include: {
+      items: { orderBy: { id: "asc" }, select: { id: true, productName: true, unitPrice: true, quantity: true } },
+      statusChanges: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { id: true, fromStatus: true, toStatus: true, createdAt: true } },
+    },
+  });
+  return order && { ...order, requestedDate: order.requestedDate.toISOString().slice(0, 10) };
+}
+
+export type StatusChange = { ok: true; changed: boolean } | { ok: false; error: "not_found" };
+
+/**
+ * M2 plan D15 (System Design §4.9): run inside a transaction. The row lock makes a concurrent change wait, so each
+ * history row's `fromStatus` is the previous row's `toStatus`. The same status writes nothing.
+ */
+export async function changeOrderStatus(tx: Client, id: number, status: OrderStatus): Promise<StatusChange> {
+  const [row] = await tx.$queryRaw<{ status: OrderStatus }[]>`SELECT status FROM orders WHERE id = ${id} FOR UPDATE`;
+  if (!row) return { ok: false, error: "not_found" };
+  if (row.status === status) return { ok: true, changed: false };
+  await tx.order.update({ where: { id }, data: { status } });
+  // Prisma fills createdAt when it sends the insert (after the lock), not with the transaction's now(), so a change
+  // that waited sorts after the one it waited for (the barrier test checks this).
+  await tx.orderStatusChange.create({ data: { orderId: id, fromStatus: row.status, toStatus: status } });
+  return { ok: true, changed: true };
+}

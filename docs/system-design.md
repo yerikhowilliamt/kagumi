@@ -78,6 +78,7 @@ src/
     admin/(protected)/layout.tsx  requireAdmin() + shell (sidebar / bottom nav)
     admin/(protected)/page.tsx            overview
     admin/(protected)/pesanan/...         orders list + detail
+    admin/(protected)/pesanan/actions.ts  setOrderStatus (Server Action, its only export; calls requireAdmin())
     admin/(protected)/produk/...          products list + form
     admin/(protected)/statistik/page.tsx
     api/t/route.ts              event tracking (POST)
@@ -90,6 +91,7 @@ src/
     cloudinary.ts               sign upload, verify response, destroy, delivery URLs
     tracking.ts                 visitor hash, bot filter, rate limit (server only)
     checkout.ts                 the checkout transaction behind createOrder (server only)
+    orders.ts                   admin order queries and the status change, each taking the client (server only)
     order.ts                    order number, WhatsApp message builder
     validation.ts               Zod schemas shared by client and server
     menu.ts                     storefront product types and the closed/sort rules (client-safe)
@@ -228,7 +230,7 @@ Money is stored as an integer in rupiah. There are no decimals and no currency c
 
 - **List** (`/admin/pesanan`): orders newest first, with item count and subtotal aggregated from `order_items`. Filter by status. Search matches the customer name (case-insensitive, contains) or the order number (`KD-0123`, `0123` or `123`).
 - **Detail:** everything saved at checkout, the lines with their snapshot prices, the history from `order_status_changes`, and a "Buka chat WhatsApp" link to `wa.me/<customer number>` with a prefilled greeting that names the order number.
-- **Status change** (Server Action, `requireAdmin()`): any status may change to any other status (FR29). The action updates `orders.status` and inserts the `order_status_changes` row in one transaction. Setting the status the order already has does nothing. Status changes don't affect the storefront, so nothing is revalidated.
+- **Status change** (`setOrderStatus(orderId, status)` in `admin/(protected)/pesanan/actions.ts`, `requireAdmin()` first): any status may change to any other status (FR29). The input is checked again on the server (an integer id 1–2147483647, one of the four statuses); anything else returns `validation` and writes nothing. In one transaction the action reads the order with `SELECT … FOR UPDATE`, updates `orders.status` and inserts the `order_status_changes` row; the row lock makes a concurrent change wait, so each history row's `fromStatus` equals the previous row's `toStatus`. Setting the status the order already has writes nothing. The result is `{ ok: true, changed }` or `{ ok: false, error: "validation" | "not_found" | "server" }`; a thrown error rolls back and logs only its name and code. After a change the action revalidates the admin layout (`revalidatePath("/admin", "layout")`: status bar, nav count, list). Status changes don't affect the storefront, so the `products` tag is not revalidated.
 - **Activity feed and status bar** (overview): derived on request from three sources: orders created, status changes, and open pre-orders that have an order deadline (shown as days left). There is no separate log table, so product edits don't appear in the feed. The status bar counts orders with status `NEW` and open pre-orders.
 
 ### 4.10 Environments and deployment

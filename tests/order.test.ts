@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   SHOP_WHATSAPP,
   buildOrderMessage,
+  chatGreeting,
+  chatUrl,
   formatDateLong,
   formatDateMedium,
   formatDateShort,
   formatJakartaTime,
   formatOrderNumber,
+  formatPhone,
   formatRupiah,
   formatSubtotal,
   formatWhen,
@@ -398,5 +401,41 @@ describe("itemTotals and formatSubtotal (M2.4 K5, X5)", () => {
     ]);
     expect(subtotal).toBe(100_049);
     expect(Number.isInteger(subtotal)).toBe(true);
+  });
+});
+
+// M2.5 K6, M2 plan D18 (phone display) and D19 (chat link greeting).
+describe("formatPhone (M2.5 K6, D18)", () => {
+  it("0 + the digits after 62, grouped 4-4-rest", () => {
+    expect(formatPhone("6281234567890")).toBe("0812-3456-7890"); // 13 digits, the D18 example
+    expect(formatPhone("6281234567")).toBe("0812-3456-7"); // 10 digits, the shortest the checkout accepts
+    expect(formatPhone("628123456789012")).toBe("0812-3456-789012"); // 15 digits, the longest
+  });
+});
+
+describe("chatUrl and chatGreeting (M2.5 K6, D19)", () => {
+  const GREETING = "Halo kak, ini Kagumi Dough soal pesanan KD-0123 dari website.";
+
+  it("the greeting names the order number in the KD-0123 form", () => {
+    expect(chatGreeting(123)).toBe(GREETING);
+    expect(chatGreeting(12345)).toBe("Halo kak, ini Kagumi Dough soal pesanan KD-12345 dari website.");
+  });
+
+  it("is wa.me/<customer number>?text= + the encoded greeting, for 10-, 13- and 15-digit numbers", () => {
+    for (const phone of ["6281234567", "6281234567890", "628123456789012"]) {
+      expect(chatUrl(phone, GREETING)).toBe(`https://wa.me/${phone}?text=${encodeURIComponent(GREETING)}`);
+      const url = new URL(chatUrl(phone, GREETING));
+      expect(url.pathname).toBe(`/${phone}`);
+      expect(url.searchParams.get("text")).toBe(GREETING);
+    }
+    expect(chatUrl("6281234567890", GREETING)).toContain("Halo%20kak%2C%20ini%20Kagumi%20Dough%20soal%20pesanan%20KD-0123");
+  });
+
+  it("goes to the customer, not the shop", () => {
+    expect(chatUrl("6281234567890", GREETING)).not.toContain(SHOP_WHATSAPP);
+  });
+
+  it("does not throw on a lone surrogate (same encoding as whatsappUrl)", () => {
+    expect(() => chatUrl("6281234567890", "a\uD800b")).not.toThrow();
   });
 });
