@@ -252,6 +252,74 @@ test("without a session the detail redirects to the login (K7)", async ({ page }
   }
 });
 
+// TR-M2.5-04: the nav item whose page is loading shows the design.md §5 pending edge (sidebar or bottom nav).
+test("the Pesanan nav item is marked while the list loads", async ({ page }) => {
+  await loginAs(page, "detail");
+  await page.locator('a[href^="/admin/pesanan/"]:visible').first().click();
+  await expect(picker(page)).toBeVisible();
+  const item = page.getByRole("navigation", { name: "Menu admin" }).getByRole("link", { name: /^Pesanan/ }).filter({ visible: true });
+  await expect(item).toHaveCount(1);
+  await expect.poll(() => item.evaluate((el) => Object.keys(el).some((key) => key.startsWith("__reactProps")))).toBe(true);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  await page.route(
+    (url) => url.pathname === "/admin/pesanan",
+    async (route) => {
+      await held;
+      return route.continue();
+    },
+  );
+  await item.click();
+  await expect(item.locator("[data-pending]")).toHaveCount(1);
+  await expect(item).toHaveCSS("outline-style", "dashed");
+  release();
+  await expect(page).toHaveURL((url) => url.pathname === "/admin/pesanan");
+});
+
+// TR-M2.5-05: every admin page title is design.md §3 "Admin page title" (600, line height 1.1, -0.03em).
+test("admin page titles follow the type scale on the list, the detail and the 404", async ({ page }) => {
+  await loginAs(page, "detail");
+  const title = async () =>
+    page.getByRole("heading", { level: 1 }).evaluate((el) => {
+      const style = getComputedStyle(el);
+      const size = parseFloat(style.fontSize);
+      return {
+        weight: style.fontWeight,
+        lineHeight: Math.round((parseFloat(style.lineHeight) / size) * 100) / 100,
+        tracking: Math.round((parseFloat(style.letterSpacing) / size) * 100) / 100,
+      };
+    });
+  const spec = { weight: "600", lineHeight: 1.1, tracking: -0.03 };
+  expect(await title()).toEqual(spec);
+  await page.locator('a[href^="/admin/pesanan/"]:visible').first().click();
+  await expect(picker(page)).toBeVisible();
+  expect(await title()).toEqual(spec);
+  await page.goto("/admin/pesanan/abc");
+  expect(await title()).toEqual(spec);
+});
+
+// TR-M2.5-06: the session ends while the detail is open (logout elsewhere, a reset, the expiry). The pick goes
+// to the login, with no alert and nothing written (requireAdmin runs first, as the gate test proves).
+test("a pick after the session ended goes to the login, with no alert", async ({ page, context }) => {
+  // The action rejects with NEXT_REDIRECT; an alert shown even for a moment before the navigation is recorded here.
+  await page.addInitScript(() => {
+    const w = window as unknown as { alertSeen: boolean };
+    w.alertSeen = false;
+    new MutationObserver(() => {
+      if (document.querySelector('[role="alert"]')?.textContent?.includes("belum tersimpan")) w.alertSeen = true;
+    }).observe(document, { childList: true, subtree: true, characterData: true });
+  });
+  await loginAs(page, "detail");
+  await page.locator('a[href^="/admin/pesanan/"]:visible').first().click();
+  await expect(picker(page)).toBeVisible();
+  const pressed = await picker(page).locator('[aria-pressed="true"]').textContent();
+  const target = pressed === "Selesai" ? "Dibatalkan" : "Selesai";
+  await context.clearCookies();
+  await option(page, target).click();
+  await expect(page).toHaveURL((url) => url.pathname === "/admin/login");
+  expect(await page.evaluate(() => (window as unknown as { alertSeen: boolean }).alertSeen)).toBe(false);
+});
+
 test.describe("360 px (K8)", () => {
   test.beforeEach(({ page }) => test.skip(isDesktop(page), "mobile-360 project only"));
 

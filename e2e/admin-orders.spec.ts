@@ -184,6 +184,9 @@ test("the order being opened is marked while its page loads, and the others step
   await first.click();
   await expect(first.locator("[data-pending]")).toHaveCount(1);
   await expect(links.locator("[data-pending]")).toHaveCount(1);
+  // The used link's own signal (design.md §5 Pending): a dashed underline on a row, a dashed edge on a card.
+  if (isDesktop(page)) await expect(first).toHaveCSS("text-decoration-style", "dashed");
+  else await expect(first).toHaveCSS("border-top-style", "dashed");
   await expect(page.locator(isDesktop(page) ? "table tbody tr" : "main ul > li > a").nth(1)).toHaveCSS("opacity", "0.55");
   await expect(page).toHaveURL((url) => url.pathname === "/admin/pesanan");
   release();
@@ -202,4 +205,31 @@ test.describe("360 px (K7)", () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
     });
   }
+});
+
+// TR-M2.5-03, design.md §5: the 34px chips have a 44px hit area, and admin buttons answer a press with scale .97.
+// Each press is released away from the control, so nothing is clicked (no filter, no theme change, no logout).
+test("chips reach 44px of hit area; chips and sidebar buttons scale on press", async ({ page }) => {
+  await loginAs(page, "orders");
+  const chip = chips(page).getByRole("button").first();
+  const hit = await chip.evaluate((el) => {
+    const before = getComputedStyle(el, "::before");
+    return { height: el.getBoundingClientRect().height, top: parseFloat(before.top), bottom: parseFloat(before.bottom) };
+  });
+  expect(hit.height - hit.top - hit.bottom).toBe(44);
+
+  const pressed = async (target: ReturnType<Page["locator"]>) => {
+    const box = (await target.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expect(target).toHaveCSS("scale", "0.97");
+    await page.mouse.move(1, 1);
+    await page.mouse.up();
+  };
+  await pressed(chip);
+  if (isDesktop(page)) {
+    await pressed(page.locator("aside").getByRole("button", { name: "Ganti tema terang/gelap" }));
+    await pressed(page.locator("aside").getByRole("button", { name: "Keluar" }));
+  }
+  await expect(page).toHaveURL((url) => url.pathname === "/admin/pesanan" && url.search === "");
 });

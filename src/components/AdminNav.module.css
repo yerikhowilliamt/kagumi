@@ -99,3 +99,11 @@
   border-radius: 0 0 3px 3px;
   background: var(--link);
 }
+
+/* design.md §5 Pending (admin): the item whose page is loading takes a 1px dashed --ink edge (an outline, so
+   nothing moves), in the sidebar and in the bottom nav. */
+.item:has([data-pending]) {
+  outline: 1px dashed var(--ink);
+  outline-offset: -1px;
+  cursor: progress;
+}

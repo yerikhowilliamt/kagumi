@@ -1,0 +1,5 @@
+/* design.md §3 Type scale, "Admin page title". Every admin page's h1 composes it, so the rule lives once. */
+.title {
+  font: 600 clamp(26px, 3vw, 34px) / 1.1 var(--head);
+  letter-spacing: -0.03em;
+}

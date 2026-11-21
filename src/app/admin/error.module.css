@@ -5,9 +5,7 @@
   padding: 64px 16px;
 }
 
-/* The admin page title of pesanan/page.module.css */
 .title {
+  composes: title from "./title.module.css";
   margin: 0 0 20px;
-  font: 600 clamp(26px, 3vw, 34px) / 1.15 var(--head);
-  letter-spacing: -0.02em;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import LinkPending from "./LinkPending";
 import { usePathname } from "next/navigation";
 import styles from "./AdminNav.module.css";
 
@@ -30,6 +31,7 @@ export default function AdminNav({ variant, newOrders }: { variant: "side" | "bo
           className={styles.item}
           aria-current={pathname === href || pathname.startsWith(`${href}/`) ? "page" : undefined}
         >
+          <LinkPending />
           <svg aria-hidden="true" viewBox="0 0 24 24">
             {icon}
           </svg>

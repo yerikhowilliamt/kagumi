@@ -38,9 +38,8 @@
 }
 
 .title {
+  composes: title from "../../../title.module.css";
   margin: 10px 0 6px;
-  font: 600 clamp(26px, 3vw, 34px) / 1.15 var(--head);
-  letter-spacing: -0.02em;
 }
 
 .muted {

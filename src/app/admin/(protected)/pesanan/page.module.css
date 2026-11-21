@@ -24,9 +24,8 @@
 }
 
 .title {
+  composes: title from "../../title.module.css";
   margin: 10px 0 0;
-  font: 600 clamp(26px, 3vw, 34px) / 1.15 var(--head);
-  letter-spacing: -0.02em;
 }
 
 .toolbar {
@@ -41,10 +40,11 @@
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px 6px; /* rows 10px apart, so the 44px hit areas do not overlap */
 }
 
 .chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -59,7 +59,20 @@
   transition:
     background 0.2s,
     color 0.2s,
-    border-color 0.2s;
+    border-color 0.2s,
+    scale 0.1s ease-out;
+}
+
+/* design.md §5 Hit area: 34px look, 44px target (5px above and below, 3px into the 6px gaps). */
+.chip::before {
+  content: "";
+  position: absolute;
+  inset: -5px -3px;
+}
+
+/* design.md §5 Pressed */
+.chip:active {
+  scale: 0.97;
 }
 
 .chip em {
@@ -151,6 +164,11 @@
 
 .rowLink:has([data-pending])::after {
   cursor: progress;
+}
+
+/* design.md §5 Pending (admin), a text link: the dashed underline tells the loading row from a hovered one. */
+.rowLink:has([data-pending]) {
+  text-decoration: underline dashed;
 }
 
 .table tbody tr:last-child td {
