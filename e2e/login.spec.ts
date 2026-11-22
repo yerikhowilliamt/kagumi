@@ -17,11 +17,16 @@ const formAlert = (page: Page) => page.locator("main").getByRole("alert");
 
 const sessionCookie = async (context: BrowserContext) => (await context.cookies()).find((c) => c.name === COOKIE);
 
-/** Submits the form and waits for the action's response, so a stale alert from the previous attempt isn't read. */
+/**
+ * Submits the form and waits until React has applied the action's result, so a stale alert from the previous attempt
+ * isn't read. The response alone is not enough: it resolves on the headers, before React mounts the new alert (ERR-004).
+ * The button reads "Masuk" again when pending ends, in the commit that mounts the alert and resets the form.
+ */
 async function submit(page: Page, email: string, password: string) {
   const response = page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname === "/admin/login");
   await fillLogin(page, email, password);
   await response;
+  await expect(page.getByRole("button", { name: "Masuk", exact: true })).toBeEnabled();
 }
 
 test.describe("login page (K1, D21, D22)", () => {
