@@ -80,6 +80,7 @@ src/
     admin/(protected)/pesanan/...         orders list + detail
     admin/(protected)/pesanan/actions.ts  setOrderStatus (Server Action, its only export; calls requireAdmin())
     admin/(protected)/produk/...          products list + form
+    admin/(protected)/produk/actions.ts   setProductActive and the later product actions (Server Actions; each calls requireAdmin())
     admin/(protected)/statistik/page.tsx
     api/t/route.ts              event tracking (POST)
     api/cron/cleanup/route.ts   daily cleanup (GET, CRON_SECRET)
@@ -92,6 +93,7 @@ src/
     tracking.ts                 visitor hash, bot filter, rate limit (server only)
     checkout.ts                 the checkout transaction behind createOrder (server only)
     orders.ts                   admin order queries and the status change, each taking the client (server only)
+    products.ts                 admin product and media queries and mutations, each taking the client (server only)
     order.ts                    order number, WhatsApp message builder
     validation.ts               Zod schemas shared by client and server
     menu.ts                     storefront product types and the closed/sort rules (client-safe)

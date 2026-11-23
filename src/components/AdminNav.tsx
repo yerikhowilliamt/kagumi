@@ -17,6 +17,16 @@ const ITEMS = [
       </>
     ),
   },
+  {
+    href: "/admin/produk",
+    label: "Produk",
+    icon: (
+      <>
+        <path d="M21 8 12 3 3 8v8l9 5 9-5z" />
+        <path d="m3 8 9 5 9-5M12 13v8" />
+      </>
+    ),
+  },
 ];
 
 /** `side`: the sidebar list, "Pesanan" with the NEW count pill (hidden at 0, D17). `bottom`: the mobile nav. */

@@ -137,6 +137,8 @@ describe("admin gate (D4, D12)", () => {
         }
       }
       expect(called).toContain("logout");
+      // Each admin action by name, in the task that adds it (M3 plan D19).
+      expect(called).toContain("setProductActive");
     });
 
     // The default export and every function Next calls per request for the route (TR-M2.2-01).
@@ -233,6 +235,7 @@ describe("e2e global setup (D14, K8)", () => {
   async function runSetup(guard: () => void) {
     const order: string[] = [];
     const resets: { email: string; password: string }[] = [];
+    const deletes: unknown[] = [];
     vi.stubEnv("PLAYWRIGHT_BASE_URL", "");
     vi.spyOn(process, "loadEnvFile").mockImplementation(() => void order.push("load"));
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -244,7 +247,12 @@ describe("e2e global setup (D14, K8)", () => {
     }));
     vi.doMock("../src/lib/db.ts", () => {
       order.push("db");
-      return { db: { $transaction: (run: (tx: unknown) => unknown) => run({}) } };
+      return {
+        db: {
+          $transaction: (run: (tx: unknown) => unknown) => run({}),
+          product: { deleteMany: async (args: unknown) => void (order.push("delete products"), deletes.push(args)) },
+        },
+      };
     });
     const { default: globalSetup } = await import("../e2e/global-setup.ts");
     const { ADMIN_ACCOUNTS, passwordVar } = await import("../e2e/admin.ts");
@@ -258,17 +266,19 @@ describe("e2e global setup (D14, K8)", () => {
     vi.doUnmock("../scripts/create-admin.ts");
     vi.doUnmock("../src/lib/db.ts");
     vi.resetModules();
-    return { outcome, order, resets, passwords, ADMIN_ACCOUNTS, printed: [...log.mock.calls, ...error.mock.calls] };
+    return { outcome, order, resets, deletes, passwords, ADMIN_ACCOUNTS, printed: [...log.mock.calls, ...error.mock.calls] };
   }
 
-  it("without it: loads .env, checks the development host before importing db, resets the five accounts, prints nothing", async () => {
+  it("without it: loads .env, checks the development host before importing db, resets every account, deletes leftover E2E products (M3 D24), prints nothing", async () => {
     const run = await runSetup(() => {});
     expect(run.outcome).toBe("resolved");
-    expect(run.order).toEqual(["load", "assert", "db"]);
+    expect(run.order).toEqual(["load", "assert", "db", "delete products"]);
+    expect(run.deletes).toEqual([{ where: { name: { startsWith: "E2E " } } }]);
     expect(run.resets.map((r) => r.email)).toEqual(Object.values(run.ADMIN_ACCOUNTS));
     const passwords = run.resets.map((r) => r.password);
     for (const password of passwords) expect(password).toMatch(/^[A-Za-z0-9_-]{32}$/);
-    expect(new Set(passwords).size).toBe(5);
+    expect(new Set(passwords).size).toBe(Object.keys(run.ADMIN_ACCOUNTS).length);
+    expect(Object.keys(run.ADMIN_ACCOUNTS)).toContain("products");
     expect(run.passwords).toEqual(passwords);
     expect(run.printed).toEqual([]);
   });
@@ -280,5 +290,6 @@ describe("e2e global setup (D14, K8)", () => {
     expect(run.outcome).toBe("rejected");
     expect(run.order).toEqual(["load", "assert"]);
     expect(run.resets).toEqual([]);
+    expect(run.deletes).toEqual([]);
   });
 });

@@ -31,3 +31,9 @@
   background: var(--success-bg);
   color: var(--success);
 }
+
+/* Admin: a hidden product (design.md §5). */
+.hidden {
+  background: var(--surface-2);
+  color: var(--muted);
+}

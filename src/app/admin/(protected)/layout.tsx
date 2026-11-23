@@ -70,6 +70,12 @@ export default async function ProtectedLayout({ children }: { children: ReactNod
         </div>
       </aside>
 
+      {/* Before the content in the DOM, so at 760px and below Tab reaches it right after the top bar (TD-005). It is
+          position: fixed there and hidden above, so nothing moves on screen. */}
+      <div className={styles.bottomNav}>
+        <AdminNav variant="bottom" newOrders={newOrders} />
+      </div>
+
       <div className={styles.main}>
         <div className={styles.statusbar}>
           <p className={styles.live}>
@@ -79,10 +85,6 @@ export default async function ProtectedLayout({ children }: { children: ReactNod
           </p>
         </div>
         {children}
-      </div>
-
-      <div className={styles.bottomNav}>
-        <AdminNav variant="bottom" newOrders={newOrders} />
       </div>
     </div>
   );

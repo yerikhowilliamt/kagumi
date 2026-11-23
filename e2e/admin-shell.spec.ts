@@ -33,10 +33,12 @@ test.describe("desktop shell (K1, K3)", () => {
     await expect(brand).toHaveText("Kagumi DoughAdmin");
     await expect(brand.locator("small")).toHaveText("Admin");
 
-    // D6: only pages that exist.
+    // D6: only pages that exist (M3.1 adds "Produk").
     const nav = page.getByRole("navigation", { name: "Menu admin" });
     await expect(nav).toHaveCount(1);
-    await expect(nav.getByRole("link")).toHaveCount(1);
+    await expect(nav.getByRole("link")).toHaveCount(2);
+    await expect(nav.getByRole("link", { name: "Produk" })).toHaveAttribute("href", "/admin/produk");
+    await expect(nav.getByRole("link", { name: "Produk" })).not.toHaveAttribute("aria-current");
     const orders = nav.getByRole("link", { name: /^Pesanan/ });
     await expect(orders).toHaveAttribute("href", "/admin/pesanan");
     await expect(orders).toHaveAttribute("aria-current", "page");
@@ -86,10 +88,23 @@ test.describe("360 px shell (K2)", () => {
     const nav = page.getByRole("navigation", { name: "Menu admin" });
     await expect(nav).toHaveCount(1);
     await expect(nav).toHaveCSS("position", "fixed");
-    await expect(nav.getByRole("link")).toHaveCount(1);
+    await expect(nav.getByRole("link")).toHaveText(["Pesanan", "Produk"]);
     await expect(nav.getByRole("link", { name: "Pesanan" })).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("button", { name: TOGGLE })).toHaveCount(1);
     await expect(statusText(page)).toHaveText(STATUS);
+  });
+
+  test("TD-005: from the top of /admin/pesanan, Tab reaches Produk in the bottom nav within 10 presses (M3.1 K7)", async ({ page }) => {
+    await loginAs(page, "shell");
+    const produk = page.getByRole("navigation", { name: "Menu admin" }).getByRole("link", { name: "Produk" });
+    let presses = 0;
+    while (presses < 10 && !(await produk.evaluate((el) => el === document.activeElement))) {
+      await page.keyboard.press("Tab");
+      presses += 1;
+    }
+    expect(await produk.evaluate((el) => el === document.activeElement), `after ${presses} presses`).toBe(true);
+    await produk.press("Enter");
+    await page.waitForURL("**/admin/produk");
   });
 
   for (const theme of ["light", "dark"] as const) {
@@ -132,8 +147,8 @@ test("Keluar from the shell ends the session (K6)", async ({ page }) => {
 test("Tab reaches every nav item and Keluar with a visible focus ring (K6)", async ({ page }) => {
   await loginAs(page, "shell");
   const targets = isDesktop(page)
-    ? ["Pesanan", TOGGLE, "Lihat website", "Keluar"]
-    : [TOGGLE, "Keluar", "Pesanan"];
+    ? ["Pesanan", "Produk", TOGGLE, "Lihat website", "Keluar"]
+    : [TOGGLE, "Keluar", "Pesanan", "Produk"];
   const reached = new Set<string>();
   for (let i = 0; i < 120 && reached.size < targets.length; i += 1) {
     await page.keyboard.press("Tab");

@@ -8,6 +8,7 @@ export const ADMIN_ACCOUNTS = {
   shell: "e2e-shell@kagumi.test",
   orders: "e2e-orders@kagumi.test",
   detail: "e2e-detail@kagumi.test",
+  products: "e2e-products@kagumi.test",
   lockout: "e2e-lockout@kagumi.test",
 } as const;
 

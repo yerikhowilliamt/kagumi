@@ -1,0 +1,142 @@
+/* design.md §7 Tables (product cell, mobile cards), §5 Buttons (Icon, Hit area); the shared list rules come from
+   ../pesanan/page.module.css. */
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.title {
+  composes: title from "../../title.module.css";
+  margin: 0;
+}
+
+.table td {
+  white-space: nowrap;
+}
+
+.product {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: normal;
+}
+
+.product strong {
+  display: block;
+  font: 600 14px var(--head);
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.product small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.thumb,
+.cardThumb {
+  display: block;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+}
+
+.cardThumb {
+  width: 56px;
+  height: 56px;
+}
+
+.cardMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.closed {
+  color: var(--error);
+}
+
+/* Icon button, square (design.md §5): 36px, tapped on 44px. */
+.edit {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--muted);
+  vertical-align: middle;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    scale 0.1s ease-out;
+}
+
+.edit::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+
+.edit:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.edit:active {
+  scale: 0.97;
+}
+
+/* design.md §5 Pending (admin): the edit page is loading. */
+.edit:has([data-pending]) {
+  border-style: dashed;
+  border-color: var(--ink);
+  cursor: progress;
+}
+
+.edit svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.switchCell {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.alert {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: normal;
+}
+
+/* The edit column's heading, for screen readers only. */
+.hiddenText {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
