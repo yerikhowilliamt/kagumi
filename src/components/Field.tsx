@@ -8,13 +8,15 @@ type Common = {
   error?: string;
   /** The admin height (44px) instead of the storefront's 46px (M2 plan D22). */
   admin?: boolean;
+  /** Muted text inside the left padding, e.g. "Rp" (design.md §5 Inputs). Inputs only. */
+  prefix?: string;
 };
 
 type Props = Common &
   (({ multiline: true } & Omit<ComponentProps<"textarea">, "className" | "id">) | ({ multiline?: false } & Omit<ComponentProps<"input">, "className" | "id">));
 
 // design.md §5 Inputs: label above, helper and error below.
-export default function Field({ label, helper, error, admin, multiline, ...rest }: Props) {
+export default function Field({ label, helper, error, admin, prefix, multiline, ...rest }: Props) {
   const id = useId();
   const helperId = `${id}-helper`;
   const errorId = `${id}-error`;
@@ -32,6 +34,11 @@ export default function Field({ label, helper, error, admin, multiline, ...rest 
       </label>
       {multiline ? (
         <textarea {...control} {...(rest as ComponentProps<"textarea">)} />
+      ) : prefix ? (
+        <span className={styles.prefix}>
+          <span aria-hidden="true">{prefix}</span>
+          <input {...control} {...(rest as ComponentProps<"input">)} />
+        </span>
       ) : (
         <input {...control} {...(rest as ComponentProps<"input">)} />
       )}

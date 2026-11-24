@@ -98,6 +98,9 @@ describe("admin gate (D4, D12)", () => {
         "src/app/admin/(protected)/layout.tsx",
         "src/app/admin/(protected)/page.tsx",
         "src/app/admin/(protected)/pesanan/page.tsx",
+        // M3.2 K5: the new and edit product pages enter the page test below by path.
+        "src/app/admin/(protected)/produk/baru/page.tsx",
+        "src/app/admin/(protected)/produk/[id]/page.tsx",
       ]),
     );
   });
@@ -139,6 +142,8 @@ describe("admin gate (D4, D12)", () => {
       expect(called).toContain("logout");
       // Each admin action by name, in the task that adds it (M3 plan D19).
       expect(called).toContain("setProductActive");
+      expect(called).toContain("createProduct");
+      expect(called).toContain("updateProduct");
     });
 
     // The default export and every function Next calls per request for the route (TR-M2.2-01).
@@ -160,6 +165,8 @@ describe("admin gate (D4, D12)", () => {
         }
       }
       expect(called).toContain("src/app/admin/(protected)/layout.tsx default");
+      expect(called).toContain("src/app/admin/(protected)/produk/baru/page.tsx default");
+      expect(called).toContain("src/app/admin/(protected)/produk/[id]/page.tsx default");
     });
 
     it("every admin and API route handler redirects to /admin/login (none exist in M2)", async () => {

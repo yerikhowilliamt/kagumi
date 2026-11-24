@@ -1,5 +1,6 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { isClosed } from "./order";
+import type { ProductData } from "./validation";
 
 // Admin product queries (M3 plan D13, D14, D23). Server only; every function takes the client, so tests pass a
 // rolled-back transaction.
@@ -67,4 +68,40 @@ export async function setActive(client: Client, id: string, active: boolean) {
   if (count > 0) return { found: true, changed: true } as const;
   const exists = await client.product.count({ where: { id } });
   return exists ? ({ found: true, changed: false } as const) : ({ found: false } as const);
+}
+
+// A `date` column arrives as UTC midnight and is written the same way.
+const toDate = (ymd: string | null) => (ymd ? new Date(`${ymd}T00:00:00Z`) : null);
+const toYmd = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
+
+/** One product's form fields (FR22), or null when the id has no row. */
+export async function getProduct(client: Client, id: string) {
+  const row = await client.product.findUnique({
+    where: { id },
+    select: { id: true, name: true, category: true, description: true, price: true, type: true, orderDeadline: true, isActive: true, sortOrder: true },
+  });
+  return row && { ...row, orderDeadline: toYmd(row.orderDeadline) };
+}
+
+/** The existing categories, each once and sorted: the form's suggestions (M3 plan D12). */
+export async function categories(client: Client) {
+  const rows = await client.product.findMany({ distinct: ["category"], select: { category: true }, orderBy: { category: "asc" } });
+  return rows.map((row) => row.category);
+}
+
+/** A new product's display order: after the last one (current maximum + 1), capped at the form's 9999 (D12). */
+export async function nextSortOrder(client: Client) {
+  const { _max } = await client.product.aggregate({ _max: { sortOrder: true } });
+  return _max.sortOrder === null ? 0 : Math.min(_max.sortOrder + 1, 9999);
+}
+
+export async function createProductRow(client: Client, input: ProductData) {
+  const { id } = await client.product.create({ data: { ...input, orderDeadline: toDate(input.orderDeadline) }, select: { id: true } });
+  return id;
+}
+
+/** False when the id has no row. */
+export async function updateProductRow(client: Client, id: string, input: ProductData) {
+  const { count } = await client.product.updateMany({ where: { id }, data: { ...input, orderDeadline: toDate(input.orderDeadline) } });
+  return count > 0;
 }

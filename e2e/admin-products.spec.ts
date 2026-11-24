@@ -3,7 +3,9 @@ import { devices, expect, test, type Browser, type Page } from "@playwright/test
 import { assertDevelopmentDatabase } from "../prisma/seed.ts";
 import { loginAs } from "./admin";
 
-// M3.1 products list (FR7, FR22, M3 plan D5, D9, D14, D24; exit criterion 4). Runs in the products-360 and
+// M3.1 products list (FR7, FR22, M3 plan D5, D9, D14, D24; exit criterion 4) and M3.2 product form (D2, D9, D12, D18,
+// D19): on desktop one more product per run, created through the form (shown), edited, and hidden through the switch
+// before afterAll deletes it. Runs in the products-360 and
 // products-desktop projects, after every storefront spec (D5). Write W4: per project two products named "E2E …",
 // inserted hidden (a direct insert can't expire the storefront cache, so a product becomes visible only through the
 // switch, D9), shown and hidden again through the switch, and deleted in afterAll; one rejected checkout on desktop
@@ -22,6 +24,8 @@ const SHOP = "https://wa.me/6285159545168";
 type Fixture = { id: string; name: string };
 let listed: Fixture; // ready stock, Rp12.345, deadline 10 Des 2099: the switch's subject
 let closed: Fixture; // pre-order, no price, deadline 30 Mar 2026 (past): always hidden
+let created: string | undefined; // the form's product (M3.2), desktop only
+const fixtureIds = () => [listed?.id, closed?.id, created].filter((id): id is string => Boolean(id));
 
 test.beforeAll(async ({}, info) => {
   const base = { category: "E2E", isActive: false, sortOrder: 9999, description: "Produk uji e2e." } as const;
@@ -35,8 +39,11 @@ test.beforeAll(async ({}, info) => {
 
 // A product still visible here would stay in the storefront's cached list after its row is deleted, so it is hidden
 // through the switch (updateTag) first, also when a test failed half-way.
-test.afterAll(async ({ browser }) => {
-  const visible = await db.product.findMany({ where: { id: { in: [listed?.id, closed?.id].filter(Boolean) }, isActive: true } });
+test.afterAll(async ({ browser }, info) => {
+  // The form's product is also found by its run id, in case the test failed before reading it from the URL.
+  const formMade = await db.product.findMany({ where: { name: { startsWith: "E2E form ", endsWith: ` ${runId} ${info.project.name}` } }, select: { id: true } });
+  const ids = [...new Set([...fixtureIds(), ...formMade.map((p) => p.id)])];
+  const visible = await db.product.findMany({ where: { id: { in: ids }, isActive: true } });
   if (visible.length > 0) {
     const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
     const page = await context.newPage();
@@ -45,7 +52,7 @@ test.afterAll(async ({ browser }) => {
     for (const product of visible) await toggle(page, product.name, false);
     await context.close();
   }
-  await db.product.deleteMany({ where: { id: { in: [listed?.id, closed?.id].filter(Boolean) } } });
+  await db.product.deleteMany({ where: { id: { in: ids } } });
 });
 
 const isDesktop = (page: Page) => (page.viewportSize()?.width ?? 0) > 760;
@@ -220,6 +227,207 @@ test.describe("360 px cards (K4)", () => {
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       await expect(page.getByRole("link", { name: listed.name })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+    });
+  }
+});
+
+// M3.2 product form (FR22, M3 plan D2, D9, D12, D19).
+const UUID = /^\/admin\/produk\/[0-9a-f-]{36}$/;
+const field = (page: Page, label: string | RegExp) => page.getByLabel(label, { exact: typeof label === "string" });
+
+test.describe("product form on desktop (M3.2)", () => {
+  test.beforeEach(({ page }) => test.skip(!isDesktop(page), "products-desktop only: one created product per run"));
+
+  test("create through the form, then edit name and price: the list and the storefront follow (K2, K4)", async ({ page, browser }, info) => {
+    await loginAs(page, "products");
+    await page.goto("/admin/produk");
+    await page.getByRole("link", { name: "+ Tambah produk" }).click();
+    await expect(page).toHaveURL(/\/admin\/produk\/baru$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Tambah produk");
+    await expect(page.getByText("Simpan informasi produk dulu, lalu tambahkan foto dan video.")).toBeVisible();
+
+    // Defaults: pre-order, shown, sorted after the last product (K4).
+    const pills = page.getByRole("group", { name: "Tipe produk" }).getByRole("button");
+    await expect(pills).toHaveText(["Pre-order", "Ready stock"]);
+    await expect(pills.first()).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("switch", { name: "Tampilkan di website" })).toHaveAttribute("aria-checked", "true");
+    const { _max } = await db.product.aggregate({ _max: { sortOrder: true } });
+    await expect(field(page, "Urutan tampil")).toHaveValue(String(Math.min((_max.sortOrder ?? -1) + 1, 9999)));
+    // The category field suggests every existing category (K4).
+    const existing = (await db.product.findMany({ distinct: ["category"], select: { category: true } })).map((p) => p.category);
+    const suggested = await page.locator("#product-categories option").evaluateAll((options) => options.map((o) => (o as HTMLOptionElement).value));
+    expect(suggested.toSorted()).toEqual(existing.toSorted());
+    await expect(field(page, "Kategori")).toHaveAttribute("list", "product-categories");
+
+    const name = `E2E form ${runId} ${info.project.name}`;
+    const category = `E2E Kat ${runId}`; // a new category
+    await field(page, "Nama produk").fill(name);
+    await field(page, "Kategori").fill(category);
+    await field(page, /^Harga/).fill("23.456");
+    await field(page, "Deskripsi").fill("Produk uji form e2e.");
+    await pills.filter({ hasText: "Ready stock" }).click();
+    await expect(pills.filter({ hasText: "Ready stock" })).toHaveAttribute("aria-pressed", "true");
+    await field(page, /^Batas order/).fill("2099-12-11");
+    await field(page, "Urutan tampil").fill("9999");
+    await page.getByRole("button", { name: "Simpan produk" }).click();
+
+    await expect(page).toHaveURL((url) => UUID.test(url.pathname));
+    created = new URL(page.url()).pathname.split("/").pop();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(name);
+    await expect(field(page, "Nama produk")).toHaveValue(name);
+    await expect(field(page, /^Harga/)).toHaveValue("23.456");
+    expect(await db.product.findUniqueOrThrow({ where: { id: created } })).toMatchObject({
+      name,
+      category,
+      price: 23456,
+      type: "READY_STOCK",
+      orderDeadline: new Date("2099-12-11T00:00:00Z"),
+      isActive: true,
+      sortOrder: 9999,
+      description: "Produk uji form e2e.",
+    });
+
+    // The list shows it with its fields.
+    await page.goto("/admin/produk");
+    await expect(row(page, name).getByRole("cell")).toHaveText([`${name}${category} · belum ada foto`, "Ready stock", "Rp23.456", "11 Des 2099", "", ""]);
+    await expect(switchOf(page, name)).toHaveAttribute("aria-checked", "true");
+
+    // The storefront lists it at once (D9).
+    const shop = await shopper(browser, info.testId, "created");
+    await shop.goto("/");
+    const card = menuCard(shop, name);
+    await expect(card).toHaveCount(1);
+    for (const text of [category, "Rp23.456", "Ready stock", "Batas order 11 Des"]) await expect(card).toContainText(text);
+
+    // The new category is now suggested (K4).
+    await page.goto("/admin/produk/baru");
+    await expect(page.locator(`#product-categories option[value="${category}"]`)).toHaveCount(1);
+
+    // Edit name and price: "Tersimpan.", and the storefront's next request shows the new values (D9, C1).
+    await page.goto(`/admin/produk/${created}`);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(name);
+    await expect(page.getByRole("button", { name: "Simpan perubahan" })).toBeVisible();
+    const renamed = `E2E form baru ${runId} ${info.project.name}`;
+    await field(page, "Nama produk").fill(renamed);
+    await field(page, /^Harga/).fill("45.000");
+    await page.getByRole("button", { name: "Simpan perubahan" }).click();
+    await expect(page.getByRole("status").filter({ hasText: "Tersimpan." })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(renamed);
+    await expect(page).toHaveURL(new RegExp(`/admin/produk/${created}$`));
+
+    const after = await shopper(browser, info.testId, "edited");
+    await after.goto("/");
+    await expect(menuCard(after, renamed)).toContainText("Rp45.000");
+    await expect(after.getByText(name, { exact: true })).toHaveCount(0);
+
+    // "Batal" goes back to the list.
+    await page.getByRole("link", { name: "Batal" }).click();
+    await expect(page).toHaveURL(/\/admin\/produk$/);
+    await expect(row(page, renamed).getByRole("cell").nth(2)).toHaveText("Rp45.000");
+
+    // Hidden before the spec ends, so the cached storefront never keeps an E2E product (afterAll deletes the row).
+    await toggle(page, renamed, false);
+    for (const p of [shop, after]) await p.context().close();
+  });
+
+  test("a bad or unknown id is the admin 404 (K5)", async ({ page }) => {
+    await loginAs(page, "products");
+    for (const id of ["abc", "-".repeat(36), "019a8f3e-7c2b-7abc-8def-000000000000"]) {
+      const response = await page.goto(`/admin/produk/${id}`);
+      expect(response?.status(), id).toBe(404);
+      await expect(page.getByRole("heading", { level: 1 })).toContainText("tidak ditemukan");
+    }
+  });
+});
+
+test.describe("product form at 360 px (M3.2)", () => {
+  test.beforeEach(({ page }) => test.skip(isDesktop(page), "products-360 only"));
+
+  test("a refused save keeps the typed values, marks each invalid field and focuses the first (K3)", async ({ page }) => {
+    const category = `E2E tolak ${runId}`;
+    await loginAs(page, "products");
+    await page.goto("/admin/produk/baru");
+    await field(page, "Kategori").fill(category);
+    await field(page, /^Harga/).fill("3,5");
+    await field(page, "Urutan tampil").fill("10000");
+    await page.getByRole("button", { name: "Simpan produk" }).click();
+
+    const name = field(page, "Nama produk");
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    await expect(name).toHaveAccessibleDescription("Isi nama produk (maks. 80 karakter).");
+    await expect(name).toBeFocused();
+    await expect(field(page, /^Harga/)).toHaveAttribute("aria-invalid", "true");
+    await expect(field(page, /^Harga/)).toHaveAccessibleDescription(/Isi angka tanpa koma, misalnya 35\.000\./);
+    await expect(field(page, "Urutan tampil")).toHaveAccessibleDescription(/Isi angka 0–9999\./);
+    await expect(field(page, "Kategori")).not.toHaveAttribute("aria-invalid");
+    // Every typed value stays.
+    await expect(field(page, "Kategori")).toHaveValue(category);
+    await expect(field(page, /^Harga/)).toHaveValue("3,5");
+    await expect(field(page, "Urutan tampil")).toHaveValue("10000");
+    await expect(page).toHaveURL(/\/admin\/produk\/baru$/);
+
+    // Name fixed: focus moves to the next invalid field, the price.
+    await name.fill(`E2E tolak ${runId}`);
+    await page.getByRole("button", { name: "Simpan produk" }).click();
+    await expect(field(page, /^Harga/)).toBeFocused();
+    await expect(name).not.toHaveAttribute("aria-invalid");
+    expect(await db.product.count({ where: { category } })).toBe(0);
+  });
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`new and edit pages in ${theme}: no horizontal scroll, action bar above the bottom nav, every control by Tab (K6)`, async ({ page }) => {
+      await page.addInitScript((t) => window.localStorage.setItem("kagumi-theme", t), theme);
+      await loginAs(page, "products");
+      for (const [path, submit] of [
+        ["/admin/produk/baru", "Simpan produk"],
+        [`/admin/produk/${listed.id}`, "Simpan perubahan"],
+      ] as const) {
+        await page.goto(path);
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+        await expect(page.getByRole("button", { name: submit })).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), path).toBe(false);
+
+        // The sticky bar sits above the fixed bottom nav, inside the window.
+        const bar = await page.getByRole("button", { name: submit }).boundingBox();
+        const nav = await page.getByRole("navigation", { name: "Menu admin" }).boundingBox();
+        expect(bar && nav && bar.y + bar.height <= nav.y, path).toBe(true);
+        expect(bar!.y + bar!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+
+        // The type pills use aria-pressed.
+        const pills = page.getByRole("group", { name: "Tipe produk" }).getByRole("button");
+        await expect(pills.first()).toHaveAttribute("aria-pressed", path.endsWith("baru") ? "true" : "false");
+        await expect(pills.last()).toHaveAttribute("aria-pressed", path.endsWith("baru") ? "false" : "true");
+
+        // Tab from the top reaches every control of the form, each with a visible focus ring.
+        const controls = [
+          field(page, "Nama produk"),
+          field(page, "Kategori"),
+          field(page, /^Harga/),
+          field(page, "Deskripsi"),
+          pills.first(),
+          pills.last(),
+          field(page, /^Batas order/),
+          page.getByRole("switch", { name: "Tampilkan di website" }),
+          field(page, "Urutan tampil"),
+          page.getByRole("link", { name: "Batal" }),
+          page.getByRole("button", { name: submit }),
+        ];
+        const handles = await Promise.all(controls.map((c) => c.elementHandle()));
+        const seen = new Set<number>();
+        for (let i = 0; i < 80 && seen.size < controls.length; i += 1) {
+          await page.keyboard.press("Tab");
+          for (const [index, handle] of handles.entries()) {
+            if (seen.has(index) || !(await handle!.evaluate((el) => el === document.activeElement))) continue;
+            const ring = await handle!.evaluate((el) => {
+              const style = getComputedStyle(el);
+              return style.outlineStyle === "solid" || style.boxShadow !== "none";
+            });
+            expect(ring, `focus ring on control ${index} of ${path}`).toBe(true);
+            seen.add(index);
+          }
+        }
+        expect([...seen].sort((a, b) => a - b), path).toEqual(controls.map((_, i) => i));
+      }
     });
   }
 });

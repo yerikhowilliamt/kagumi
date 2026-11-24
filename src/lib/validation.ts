@@ -87,3 +87,44 @@ export function checkoutSchema(today: string) {
 
 /** A valid checkout in the form the order is stored in. */
 export type CheckoutData = z.output<ReturnType<typeof checkoutSchema>>;
+
+// The admin product form (M3 plan D12, D18 drafts). Parsed on the server only; the form shows the server's messages.
+export const PRODUCT_MESSAGES = {
+  name: "Isi nama produk (maks. 80 karakter).",
+  category: "Isi kategori (maks. 40 karakter).",
+  description: "Deskripsi maks. 500 karakter.",
+  price: "Isi angka tanpa koma, misalnya 35.000.",
+  orderDeadline: "Tanggal tidak valid.",
+  sortOrder: "Isi angka 0–9999.",
+} as const;
+const M = PRODUCT_MESSAGES;
+
+/** "35.000" → 35000; "" → null (Harga via WA). Dots and spaces are thousands separators; anything else is refused. */
+function parsePrice(raw: string, ctx: z.RefinementCtx) {
+  if (raw.trim() === "") return null;
+  const digits = raw.replace(/[.\s]/g, "");
+  const price = /^\d+$/.test(digits) ? Number(digits) : NaN;
+  if (price >= 1 && price <= 100_000_000) return price;
+  ctx.issues.push({ code: "custom", message: M.price, input: raw });
+  return z.NEVER;
+}
+
+/** The fields of `FormData` (`Object.fromEntries(form)`) as the product row stores them. */
+export const productInput = z.object({
+  name: z.string(M.name).trim().min(1, M.name).max(80, M.name),
+  category: z.string(M.category).trim().min(1, M.category).max(40, M.category),
+  description: z.string(M.description).trim().max(500, M.description),
+  price: z.string(M.price).transform(parsePrice),
+  type: z.enum(["PRE_ORDER", "READY_STOCK"]),
+  // A past date is allowed: it closes the pre-order at once (PRD §5).
+  orderDeadline: z
+    .string(M.orderDeadline)
+    .trim()
+    .refine((date) => date === "" || z.iso.date().safeParse(date).success, M.orderDeadline)
+    .transform((date) => date || null),
+  isActive: z.enum(["true", "false"]).transform((value) => value === "true"),
+  sortOrder: z.string(M.sortOrder).trim().regex(/^\d{1,4}$/, M.sortOrder).transform(Number),
+});
+
+export type ProductData = z.output<typeof productInput>;
+export type ProductField = keyof ProductData;

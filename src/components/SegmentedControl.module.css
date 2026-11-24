@@ -1,4 +1,4 @@
-/* design.md §5 Segmented control, storefront variant. The selected shadow is --ink at 15% (D18). */
+/* design.md §5 Segmented control, storefront variant (admin variant below). The selected shadow is --ink at 15% (D18). */
 .seg {
   display: grid;
   grid-auto-columns: 1fr;
@@ -47,4 +47,33 @@
   font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Admin variant: auto-width 32px pills, selected --strong/--on-strong (design.md §5). */
+.admin {
+  display: inline-flex;
+  justify-self: start;
+  border-radius: var(--r-full);
+  background: var(--surface-2);
+}
+
+.admin .option {
+  position: relative;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--r-full);
+  font-size: 13px;
+}
+
+/* 32px high, tapped on about 44px (design.md §5 Hit area). */
+.admin .option::after {
+  content: "";
+  position: absolute;
+  inset: -6px 0;
+}
+
+.admin .option[aria-pressed="true"] {
+  background: var(--strong);
+  color: var(--on-strong);
+  box-shadow: none;
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MAX_LINES, MAX_QTY, checkoutSchema, normalizePhone } from "@/lib/validation";
+import { MAX_LINES, MAX_QTY, checkoutSchema, normalizePhone, productInput } from "@/lib/validation";
 
 const TODAY = "2026-11-17";
 const id = (n: number) => `019a8f3e-7c2b-7abc-8def-${String(n).padStart(12, "0")}`; // UUID v7, as products.id
@@ -359,5 +359,113 @@ describe("modules imported by client components (D17, D23)", () => {
     for (const file of ["order.ts", "validation.ts"]) {
       expect(source(file)).not.toMatch(/\bIntl\b|toLocale/);
     }
+  });
+});
+
+// M3.2 K1: the admin product form, from the M3 plan §4.3 D12 table and its D18 draft messages.
+describe("productInput (M3 plan D12)", () => {
+  const PRODUCT = {
+    name: "Isi nama produk (maks. 80 karakter).",
+    category: "Isi kategori (maks. 40 karakter).",
+    description: "Deskripsi maks. 500 karakter.",
+    price: "Isi angka tanpa koma, misalnya 35.000.",
+    orderDeadline: "Tanggal tidak valid.",
+    sortOrder: "Isi angka 0–9999.",
+  };
+  // What FormData gives: every value a string.
+  const FORM = {
+    name: "Hampers Natal",
+    category: "Hampers",
+    description: "Bolu gulung dan brownies.",
+    price: "35.000",
+    type: "PRE_ORDER",
+    orderDeadline: "2026-12-10",
+    isActive: "true",
+    sortOrder: "1",
+  };
+  const parse = (patch: Record<string, unknown>) => productInput.safeParse({ ...FORM, ...patch });
+  const value = (patch: Record<string, unknown>) => {
+    const result = parse(patch);
+    if (!result.success) throw new Error(`expected success: ${JSON.stringify(result.error.issues)}`);
+    return result.data;
+  };
+  const messages = (patch: Record<string, unknown>) => {
+    const result = parse(patch);
+    return result.success ? [] : result.error.issues.map((issue) => [issue.path[0], issue.message]);
+  };
+
+  it("parses a full form into the row's types", () => {
+    expect(value({})).toEqual({
+      name: "Hampers Natal",
+      category: "Hampers",
+      description: "Bolu gulung dan brownies.",
+      price: 35000,
+      type: "PRE_ORDER",
+      orderDeadline: "2026-12-10",
+      isActive: true,
+      sortOrder: 1,
+    });
+    expect(value({ type: "READY_STOCK", isActive: "false" })).toMatchObject({ type: "READY_STOCK", isActive: false });
+  });
+
+  it("name: trimmed, 1–80 characters", () => {
+    expect(value({ name: `  ${"a".repeat(80)}  ` }).name).toBe("a".repeat(80));
+    expect(messages({ name: "a".repeat(81) })).toEqual([["name", PRODUCT.name]]);
+    expect(messages({ name: "   " })).toEqual([["name", PRODUCT.name]]);
+    expect(messages({ name: undefined })).toEqual([["name", PRODUCT.name]]);
+  });
+
+  it("category: trimmed, 1–40 characters, any text", () => {
+    expect(value({ category: ` ${"k".repeat(40)} ` }).category).toBe("k".repeat(40));
+    expect(value({ category: "Kategori Baru" }).category).toBe("Kategori Baru");
+    expect(messages({ category: "k".repeat(41) })).toEqual([["category", PRODUCT.category]]);
+    expect(messages({ category: "" })).toEqual([["category", PRODUCT.category]]);
+  });
+
+  it("description: trimmed, 0–500 characters", () => {
+    expect(value({ description: "" }).description).toBe("");
+    expect(value({ description: ` ${"d".repeat(500)} ` }).description).toBe("d".repeat(500));
+    expect(messages({ description: "d".repeat(501) })).toEqual([["description", PRODUCT.description]]);
+  });
+
+  it("price: empty is null; dots and spaces dropped; digits only, 1–100.000.000", () => {
+    expect(value({ price: "" }).price).toBeNull();
+    expect(value({ price: "  " }).price).toBeNull();
+    expect(value({ price: "35.000" }).price).toBe(35000);
+    expect(value({ price: "35 000" }).price).toBe(35000);
+    expect(value({ price: "1" }).price).toBe(1);
+    expect(value({ price: "100.000.000" }).price).toBe(100_000_000);
+    for (const price of ["0", "100.000.001", "3,5", "-1", "Rp35.000", "1e5", ".", "35.000,00"]) {
+      expect(messages({ price }), price).toEqual([["price", PRODUCT.price]]);
+    }
+  });
+
+  it("type: PRE_ORDER or READY_STOCK", () => {
+    expect(messages({ type: "HIDDEN" }).map(([path]) => path)).toEqual(["type"]);
+  });
+
+  it("orderDeadline: empty is null; a real calendar date; a past date is allowed", () => {
+    expect(value({ orderDeadline: "" }).orderDeadline).toBeNull();
+    expect(value({ orderDeadline: "2020-01-01" }).orderDeadline).toBe("2020-01-01");
+    expect(value({ orderDeadline: "2028-02-29" }).orderDeadline).toBe("2028-02-29");
+    for (const date of ["2026-02-30", "2026-02-29", "2026-13-01", "10/12/2026", "2026-12-1"]) {
+      expect(messages({ orderDeadline: date }), date).toEqual([["orderDeadline", PRODUCT.orderDeadline]]);
+    }
+  });
+
+  it("isActive: the switch's hidden true/false", () => {
+    expect(messages({ isActive: "yes" }).map(([path]) => path)).toEqual(["isActive"]);
+  });
+
+  it("sortOrder: an integer 0–9999", () => {
+    expect(value({ sortOrder: "0" }).sortOrder).toBe(0);
+    expect(value({ sortOrder: " 9999 " }).sortOrder).toBe(9999);
+    for (const sortOrder of ["10000", "1.5", "-1", "", "satu"]) {
+      expect(messages({ sortOrder }), sortOrder).toEqual([["sortOrder", PRODUCT.sortOrder]]);
+    }
+  });
+
+  it("refuses a file in place of a text field", () => {
+    expect(messages({ name: new Blob(["x"]) })).toEqual([["name", PRODUCT.name]]);
   });
 });

@@ -228,8 +228,9 @@ src/
     admin/login/     The login page and its form
     admin/(protected)/  Every admin page behind the session: the layout, /admin (redirects to /admin/pesanan), pesanan/ and produk/. The layout and each page call requireAdmin()
                      pesanan/[id]/ is the order detail; pesanan/actions.ts is "use server" with setOrderStatus, its only export
-                     produk/ is the products list (chips, table, 360 px cards) with ActiveSwitch; produk/actions.ts is "use server"
-                     with setProductActive (M3 adds the other product actions there)
+                     produk/ is the products list (chips, table, 360 px cards) with ActiveSwitch; produk/baru/ (new) and produk/[id]/ (edit)
+                     share ProductForm (form.module.css); produk/actions.ts is "use server" with setProductActive, createProduct and
+                     updateProduct (M3 adds the other product actions there)
                      not-found.tsx is the admin 404 inside the shell; admin/error.tsx is the admin error page (no shell);
                      admin/title.module.css is the admin page title (design.md §3), composed by every admin page's h1
                      The layout is the design.md §7 shell (sidebar, mobile top bar and bottom nav) with the status bar; the bottom nav comes before the content in the DOM (TD-005)
@@ -237,12 +238,13 @@ src/
   components/        Shared components with their CSS Modules. Storefront: StoreProvider (products, WIB date, cart state),
                      Menu, OpenPreOrderNotice, ProductCard, ProductThumb, PromoCard, ProductDetail, Dialog, QuantityStepper, Tag, Toast, CartButton,
                      CartBar, CartSheet (steps cart → form → result), CheckoutForm (calls createOrder), OrderResult (the
-                     WhatsApp bubble: the only module with the design.md §2.7 colors), Field, SegmentedControl, Button, ThemeToggle
+                     WhatsApp bubble: the only module with the design.md §2.7 colors), Field (admin height, "Rp" prefix), SegmentedControl
+                     (admin pill variant), Button, ThemeToggle
                      (label prop: the admin sidebar item; applies the stored theme when the head script did not run). Admin: AdminNav (sidebar and bottom-nav items "Pesanan" and "Produk", the NEW count pill), Switch (design.md §5, controlled), Tag (also the admin "Disembunyikan" tag), OrderStatusBadge, StatusPicker (calls setOrderStatus), LinkPending (marks a link whose page is loading)
   lib/
     db.ts            The Prisma client on the pooled URL through @prisma/adapter-neon
     order.ts         Order number, rupiah, WIB dates and times, the WhatsApp message and URL, the admin phone display and chat link, the cart limits (no imports)
-    validation.ts    Checkout schema and phone normalization (zod)
+    validation.ts    Checkout schema, phone normalization and the admin product form's productInput (zod)
     menu.ts          Storefront product types, the row mapper and the menu rules: sort, filter, open pre-order, promo product (imports only ./order)
     cart.ts          The cart in localStorage['kagumi-cart']: load rules, add, set, remove (imports only ./order and a type from ./menu)
     tracking.ts      Server only (node:crypto): request IP and user agent, the visitor hash, the rate-limit upsert
@@ -250,7 +252,8 @@ src/
     password.ts      Server only: scrypt hashing and verification, the dummy verification, normalizeEmail (imports only node:crypto)
     auth.ts          Server only: login attempts with the lockout, sessions, getAdmin and requireAdmin
     orders.ts        Server only: admin order queries, each taking the client: statusBarCounts, listOrders (filter, search, 50 per page), statusCounts, getOrder, changeOrderStatus (row lock); the list URL rules
-    products.ts      Server only: admin product queries, each taking the client: parseProductFilter, listProducts (photo and video counts, closed flag), productCounts, setActive
+    products.ts      Server only: admin product queries, each taking the client: parseProductFilter, listProducts (photo and video counts, closed flag), productCounts, setActive,
+                     getProduct, categories, nextSortOrder, createProductRow, updateProductRow
   styles/tokens.css  Every design token, light and dark, and the global base rules
   generated/prisma/  Generated Prisma client (git-ignored, written by prisma generate)
 prisma/

@@ -1,12 +1,12 @@
-// Admin product queries and setProductActive against the development branch (task M3.1 K2, K3, K5, K6), written from
-// the M3 plan D9, D13, D14 and exit criterion 4. Every test runs in a transaction that is always rolled back, with a
+// Admin product queries and actions against the development branch (task M3.1 K2, K3, K5, K6; M3.2 K2–K4), written
+// from the M3 plan D9, D12, D13, D14 and exit criterion 4. Every test runs in a transaction that is always rolled back, with a
 // fixed `now` (W2): nothing persists. The action's `db` is that transaction while a test runs.
 import { randomBytes, randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { assertDevelopmentDatabase } from "../../prisma/seed.ts";
 import { placeOrder } from "@/lib/checkout";
 import { jakartaToday } from "@/lib/order";
-import { listProducts, productCounts, setActive, type ProductFilter } from "@/lib/products";
+import { categories, getProduct, listProducts, nextSortOrder, productCounts, setActive, type ProductFilter } from "@/lib/products";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set: tests/db needs the development branch in .env");
@@ -37,7 +37,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
 });
 
 const { db } = await import("@/lib/db");
-const { setProductActive } = await import("@/app/admin/(protected)/produk/actions");
+const { createProduct, setProductActive, updateProduct } = await import("@/app/admin/(protected)/produk/actions");
 
 type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
 const ROLLBACK = new Error("rollback");
@@ -273,6 +273,230 @@ describe("setProductActive (K6, D9, D13)", { timeout: 120_000 }, () => {
       reset();
       expect(await setProductActive(randomUUID(), true)).toEqual({ ok: false, error: "server" });
       expect(log.mock.calls).toEqual([["[setProductActive] failed", "PrismaClientKnownRequestError", "P1001"]]);
+      expect(updateTag).not.toHaveBeenCalled();
+    } finally {
+      state.tx = null;
+      log.mockRestore();
+    }
+  });
+});
+
+// M3.2: the product form's queries and actions (M3 plan D9, D12, D13).
+const FORM = {
+  name: "Test M3.2 Hampers",
+  category: "Test",
+  description: "  Bolu gulung.  ",
+  price: "35.000",
+  type: "PRE_ORDER",
+  orderDeadline: "2026-12-10",
+  isActive: "true",
+  sortOrder: "7",
+};
+function formData(patch: Record<string, string | undefined> = {}) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries({ ...FORM, ...patch })) if (value !== undefined) form.set(key, value);
+  return form;
+}
+
+/** The path of a Next redirect error (digest `NEXT_REDIRECT;<type>;<path>;<status>;`). */
+async function redirectOf(run: () => Promise<unknown>) {
+  try {
+    await run();
+  } catch (error) {
+    const digest = (error as { digest?: unknown }).digest;
+    if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT;")) return digest.split(";")[2];
+    throw error;
+  }
+  throw new Error("returned without redirecting");
+}
+
+const resetMocks = () => {
+  requireAdmin.mockClear();
+  updateTag.mockClear();
+  revalidatePath.mockClear();
+};
+
+describe("product form queries (K4)", { timeout: 120_000 }, () => {
+  it("getProduct gives the form fields with the deadline as YYYY-MM-DD, and null for an unknown id", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx, { deadline: "2026-12-10", price: 35000, type: "PRE_ORDER", isActive: false, sortOrder: 4 });
+      expect(await getProduct(tx, p.id)).toEqual({
+        id: p.id,
+        name: p.name,
+        category: "Test",
+        description: "",
+        price: 35000,
+        type: "PRE_ORDER",
+        orderDeadline: "2026-12-10",
+        isActive: false,
+        sortOrder: 4,
+      });
+      expect(await getProduct(tx, randomUUID())).toBeNull();
+    });
+  });
+
+  it("categories: every existing category once, sorted as the database sorts; a new one joins the list", async () => {
+    await rolledBack(async (tx) => {
+      const fresh = `Test M3.2 ${randomBytes(8).toString("hex")}`; // 26 characters: the column holds 40
+      await tx.product.create({ data: { name: "Test M3.2 a", category: fresh, type: "PRE_ORDER" } });
+      await tx.product.create({ data: { name: "Test M3.2 b", category: fresh, type: "READY_STOCK", isActive: false } });
+      const sql = await tx.$queryRaw<{ category: string }[]>`SELECT DISTINCT category FROM products ORDER BY category`;
+      const list = await categories(tx);
+      expect(list).toEqual(sql.map((row) => row.category));
+      expect(list.filter((c) => c === fresh)).toHaveLength(1);
+    });
+  });
+
+  it("nextSortOrder: the current maximum + 1, capped at 9999", async () => {
+    await rolledBack(async (tx) => {
+      const [{ max }] = await tx.$queryRaw<{ max: number | null }[]>`SELECT max(sort_order) AS max FROM products`;
+      expect(await nextSortOrder(tx)).toBe(max === null ? 0 : Math.min(max + 1, 9999));
+      await product(tx, { sortOrder: 9000, isActive: false });
+      expect(await nextSortOrder(tx)).toBe(Math.max(9001, Math.min((max ?? -1) + 1, 9999)));
+      await product(tx, { sortOrder: 9998, isActive: false });
+      expect(await nextSortOrder(tx)).toBe(9999);
+      await product(tx, { sortOrder: 12000, isActive: false }); // written outside the form
+      expect(await nextSortOrder(tx)).toBe(9999);
+    });
+  });
+});
+
+describe("createProduct (K2, K3, D9, D13)", { timeout: 120_000 }, () => {
+  it("writes the row, expires the products tag and the admin layout, and lands on the edit page", async () => {
+    await rolledBack(async (tx) => {
+      resetMocks();
+      const name = `Test M3.2 ${randomUUID()}`;
+      const path = await redirectOf(() => createProduct(null, formData({ name })));
+      const row = await tx.product.findFirstOrThrow({ where: { name } });
+      expect(path).toBe(`/admin/produk/${row.id}`);
+      expect(row).toMatchObject({
+        category: "Test",
+        description: "Bolu gulung.",
+        price: 35000,
+        type: "PRE_ORDER",
+        orderDeadline: new Date("2026-12-10T00:00:00Z"),
+        isActive: true,
+        sortOrder: 7,
+      });
+      expect(requireAdmin).toHaveBeenCalledTimes(1);
+      expect(updateTag.mock.calls).toEqual([["products"]]);
+      expect(revalidatePath.mock.calls).toEqual([["/admin", "layout"]]);
+
+      // Empty price and deadline are null: "Harga via WA", no deadline.
+      const plain = `Test M3.2 ${randomUUID()}`;
+      await redirectOf(() => createProduct(null, formData({ name: plain, price: "", orderDeadline: "", isActive: "false", type: "READY_STOCK" })));
+      expect(await tx.product.findFirstOrThrow({ where: { name: plain } })).toMatchObject({ price: null, orderDeadline: null, isActive: false, type: "READY_STOCK" });
+    });
+  });
+
+  it("a refused save writes nothing, revalidates nothing, and names each invalid field with its D12 message", async () => {
+    await rolledBack(async (tx) => {
+      const before = await tx.product.count();
+      resetMocks();
+      expect(await createProduct(null, formData({ name: "", price: "3,5", orderDeadline: "2026-02-30", sortOrder: "10000" }))).toEqual({
+        ok: false,
+        error: "validation",
+        fields: {
+          name: "Isi nama produk (maks. 80 karakter).",
+          price: "Isi angka tanpa koma, misalnya 35.000.",
+          orderDeadline: "Tanggal tidak valid.",
+          sortOrder: "Isi angka 0–9999.",
+        },
+      });
+      expect(await tx.product.count()).toBe(before);
+      expect(updateTag).not.toHaveBeenCalled();
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+  });
+
+  it("returns server on a database error, with one log line holding the error name and code only", async () => {
+    const error = Object.assign(new Error("secret product data"), { name: "PrismaClientKnownRequestError", code: "P1001" });
+    state.tx = { product: { create: async () => Promise.reject(error) } };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      resetMocks();
+      expect(await createProduct(null, formData())).toEqual({ ok: false, error: "server" });
+      expect(log.mock.calls).toEqual([["[createProduct] failed", "PrismaClientKnownRequestError", "P1001"]]);
+      expect(updateTag).not.toHaveBeenCalled();
+    } finally {
+      state.tx = null;
+      log.mockRestore();
+    }
+  });
+});
+
+describe("updateProduct (K2, K3, D9, D13)", { timeout: 120_000 }, () => {
+  it("saves every field and expires the products tag and the admin layout", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx, { type: "READY_STOCK", price: 1000 });
+      resetMocks();
+      const name = `Test M3.2 ${randomUUID()}`;
+      expect(await updateProduct(null, formData({ id: p.id, name, price: "40.000", orderDeadline: "2020-01-01", isActive: "false" }))).toEqual({ ok: true });
+      expect(await getProduct(tx, p.id)).toEqual({
+        id: p.id,
+        name,
+        category: "Test",
+        description: "Bolu gulung.",
+        price: 40000,
+        type: "PRE_ORDER",
+        orderDeadline: "2020-01-01", // a past date closes the pre-order at once (PRD §5)
+        isActive: false,
+        sortOrder: 7,
+      });
+      expect(requireAdmin).toHaveBeenCalledTimes(1);
+      expect(updateTag.mock.calls).toEqual([["products"]]);
+      expect(revalidatePath.mock.calls).toEqual([["/admin", "layout"]]);
+    });
+  });
+
+  it("a refused save leaves the row as it was and revalidates nothing", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx, { price: 1000 });
+      const before = await tx.product.findUniqueOrThrow({ where: { id: p.id } });
+      resetMocks();
+      expect(await updateProduct(null, formData({ id: p.id, category: "k".repeat(41), description: "d".repeat(501) }))).toEqual({
+        ok: false,
+        error: "validation",
+        fields: { category: "Isi kategori (maks. 40 karakter).", description: "Deskripsi maks. 500 karakter." },
+      });
+      expect(await tx.product.findUniqueOrThrow({ where: { id: p.id } })).toEqual(before);
+      expect(updateTag).not.toHaveBeenCalled();
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+  });
+
+  it("refuses an id that is not a UUID with validation before any database read", async () => {
+    const reads: string[] = [];
+    state.tx = new Proxy({}, { get: (_target, prop) => void reads.push(String(prop)) });
+    try {
+      resetMocks();
+      for (const id of [undefined, "", "abc", "-".repeat(36), `${randomUUID()}x`]) {
+        expect(await updateProduct(null, formData({ id })), String(id)).toEqual({ ok: false, error: "validation" });
+      }
+      expect(reads).toEqual([]);
+      expect(updateTag).not.toHaveBeenCalled();
+    } finally {
+      state.tx = null;
+    }
+  });
+
+  it("answers not_found for an unknown UUID and revalidates nothing", async () => {
+    await rolledBack(async () => {
+      resetMocks();
+      expect(await updateProduct(null, formData({ id: randomUUID() }))).toEqual({ ok: false, error: "not_found" });
+      expect(updateTag).not.toHaveBeenCalled();
+      expect(revalidatePath).not.toHaveBeenCalled();
+    });
+  });
+
+  it("returns server on a database error, with one log line holding the error name and code only", async () => {
+    const error = Object.assign(new Error("secret product data"), { name: "PrismaClientKnownRequestError", code: "P1001" });
+    state.tx = { product: { updateMany: async () => Promise.reject(error) } };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      resetMocks();
+      expect(await updateProduct(null, formData({ id: randomUUID() }))).toEqual({ ok: false, error: "server" });
+      expect(log.mock.calls).toEqual([["[updateProduct] failed", "PrismaClientKnownRequestError", "P1001"]]);
       expect(updateTag).not.toHaveBeenCalled();
     } finally {
       state.tx = null;
