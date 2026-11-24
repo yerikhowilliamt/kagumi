@@ -14,6 +14,8 @@ type Result = Awaited<ReturnType<typeof deleteProduct>>;
 // approved message (M3 plan D18).
 export default function DeleteProduct({ id, name }: { id: string; name: string }) {
   const [open, setOpen] = useState(false);
+  // The attempt count when the dialog last opened: an old failure is not shown again on the next open (BSA-M3.3-02).
+  const [openedAt, setOpenedAt] = useState(0);
   // attempt keys the alert, so a repeated failure is announced again (as ProductForm).
   const [state, dispatch, pending] = useActionState(async (prev: { result: Result; attempt: number } | null) => {
     let result: Result;
@@ -27,7 +29,14 @@ export default function DeleteProduct({ id, name }: { id: string; name: string }
   }, null);
   return (
     <>
-      <Button variant="danger" size="nav" onClick={() => setOpen(true)}>
+      <Button
+        variant="danger"
+        size="nav"
+        onClick={() => {
+          setOpenedAt(state?.attempt ?? 0);
+          setOpen(true);
+        }}
+      >
         Hapus produk
       </Button>
       <Dialog open={open} onClose={() => setOpen(false)} labelledBy="delete-title" variant="confirm">
@@ -35,7 +44,7 @@ export default function DeleteProduct({ id, name }: { id: string; name: string }
           Hapus {name}?
         </h2>
         <p className={styles.confirmText}>Produk beserta semua foto dan videonya akan dihapus permanen. Pesanan lama tetap tersimpan.</p>
-        {state && open && !pending && (
+        {state && state.attempt > openedAt && !pending && (
           <p key={state.attempt} className={styles.alert} role="alert">
             Perubahan belum tersimpan. Coba lagi.
           </p>

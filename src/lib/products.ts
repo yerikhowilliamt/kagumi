@@ -118,7 +118,8 @@ export async function deleteProductRow(tx: Client, id: string): Promise<QueuedAs
   const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM products WHERE id = ${id}::uuid FOR UPDATE`;
   if (locked.length === 0) return null;
   const media = await tx.productMedia.findMany({ where: { productId: id }, select: { publicId: true, kind: true } });
-  if (media.length > 0) await tx.pendingDeletion.createMany({ data: media });
+  // skipDuplicates: an asset already queued (a failed earlier attempt) keeps its row, attempts and last_error.
+  if (media.length > 0) await tx.pendingDeletion.createMany({ data: media, skipDuplicates: true });
   await tx.product.delete({ where: { id } });
   return media;
 }

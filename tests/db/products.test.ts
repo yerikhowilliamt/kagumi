@@ -606,6 +606,70 @@ describe("delete through the queue (M3.3 K5, exit criterion 3)", { timeout: 120_
     });
   });
 
+  it("an asset already queued keeps its row and doesn't block the delete (BSA-M3.3-01)", async () => {
+    await rolledBack(async (tx) => {
+      const { p, assets } = await deletable(tx);
+      const [old] = assets;
+      await tx.pendingDeletion.create({ data: { publicId: old.publicId, kind: old.kind, attempts: 3, lastError: "HTTP 500: earlier" } });
+      const queued = await deleteProductRow(tx, p.id);
+      expect(queued).toHaveLength(2);
+      expect(await tx.product.count({ where: { id: p.id } })).toBe(0);
+      const rows = await queue(tx, assets);
+      expect(rows).toHaveLength(2);
+      expect(rows.find((r) => r.publicId === old.publicId)).toMatchObject({ attempts: 3, lastError: "HTTP 500: earlier" });
+    });
+  });
+
+  it("processDeletions destroys one asset at a time, in the queued order (decision 5, BSA-M3.3-03)", async () => {
+    await rolledBack(async (tx) => {
+      const { p } = await deletable(tx);
+      const queued = (await deleteProductRow(tx, p.id))!;
+      const events: string[] = [];
+      let inFlight = 0;
+      let peak = 0;
+      await processDeletions(tx, queued, async (publicId) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        events.push(`start ${publicId}`);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        events.push(`end ${publicId}`);
+        inFlight -= 1;
+        return "ok";
+      });
+      expect(peak).toBe(1);
+      expect(events).toEqual(queued.flatMap((a) => [`start ${a.publicId}`, `end ${a.publicId}`]));
+    });
+  });
+
+  it("deleteProduct: a database error after the commit is logged, and the delete still revalidates and redirects (BSA-M3.3-03)", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await rolledBack(async (tx) => {
+        resetMocks();
+        const { p } = await deletable(tx);
+        const error = Object.assign(new Error("secret product data"), { name: "PrismaClientKnownRequestError", code: "P1001" });
+        // The queue clean-up fails; the delete transaction itself (createMany, delete) works.
+        state.tx = new Proxy(tx, {
+          get(target, prop) {
+            const value = Reflect.get(target, prop);
+            if (prop !== "pendingDeletion") return typeof value === "function" ? value.bind(target) : value;
+            return new Proxy(value, {
+              get: (delegate, method) => (method === "deleteMany" ? async () => Promise.reject(error) : Reflect.get(delegate, method)),
+            });
+          },
+        });
+        expect(await redirectOf(() => deleteProduct(p.id))).toBe("/admin/produk");
+        expect(destroyAsset).toHaveBeenCalledTimes(1); // stopped at the first queue clean-up
+        expect(log.mock.calls).toEqual([["[deleteProduct] failed", "PrismaClientKnownRequestError", "P1001"]]);
+        expect(updateTag).toHaveBeenCalledWith("products");
+        expect(revalidatePath).toHaveBeenCalledWith("/admin", "layout");
+        expect(await tx.product.count({ where: { id: p.id } })).toBe(0);
+      });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("deleteProduct: queue, destroy, D9, then the products list", async () => {
     await rolledBack(async (tx) => {
       resetMocks();

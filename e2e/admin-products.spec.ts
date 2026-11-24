@@ -355,7 +355,7 @@ test.describe("product form on desktop (M3.2)", () => {
 test.describe("delete on desktop (M3.3)", () => {
   test.beforeEach(({ page }) => test.skip(!isDesktop(page), "products-desktop only: one deleted product per run"));
 
-  test("the confirmation opens on Batal; Esc, Batal and Enter keep the product; Hapus deletes it from the list and the storefront (K6)", async ({ page, browser }, info) => {
+  test("the confirmation opens on Batal; Esc, Batal, Enter and a failed request keep the product; Hapus deletes it from the list and the storefront (K6)", async ({ page, browser }, info) => {
     const name = `E2E hapus ${runId} ${info.project.name}`;
     doomed = (
       await db.product.create({
@@ -391,6 +391,23 @@ test.describe("delete on desktop (M3.3)", () => {
     await expect(cancel).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(dialog).toBeHidden();
+    expect(await db.product.count({ where: { id: doomed } })).toBe(1);
+
+    // A failed delete (the request dropped) keeps the dialog open with the alert; the next open starts clean
+    // (decision 3, BSA-M3.3-02).
+    const failed = `**/admin/produk/${doomed}`;
+    await page.route(failed, (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
+    await open.click();
+    await dialog.getByRole("button", { name: "Hapus", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toHaveText("Perubahan belum tersimpan. Coba lagi.");
+    await expect(dialog).toBeVisible();
+    await page.unroute(failed);
+    await cancel.click();
+    await expect(dialog).toBeHidden();
+    await open.click();
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
+    await cancel.click();
     expect(await db.product.count({ where: { id: doomed } })).toBe(1);
 
     // "Hapus": "Menghapus…" while the action runs (held back here), then the list without it.

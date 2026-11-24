@@ -63,7 +63,6 @@ Copy `.env.example` to `.env` (git-ignored). The project owner supplies the valu
 | `TRACKING_SECRET` | Secret of the daily salt of the visitor hash (`src/lib/tracking.ts`), used by `createOrder` for the checkout rate limit. The project owner generates it (for example `openssl rand -hex 32`) and enters it; nobody else reads it. Without it every checkout returns the `server` result. The Vitest tests pass their own fake secret and don't need it |
 | `ADMIN_EMAIL` | Email of your development admin account. Read only by `node scripts/create-admin.ts` (§4) |
 | `ADMIN_PASSWORD` | Password of that account, 12 to 1024 characters. Read only by `node scripts/create-admin.ts`; never printed. How the production account is created is decided in M5 (System Design §8 lists both variables; until then set them only in your local `.env`) |
-
 | `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME` | Cloud name of the shop's Cloudinary account. Public: inlined into client code at build time, so a change needs a new build |
 | `CLOUDINARY_API_KEY` | API key of that account. Server only; sent to the admin's browser with each upload signature |
 | `CLOUDINARY_API_SECRET` | API secret of that account. Read only by `src/lib/cloudinary.ts`; never printed, logged or sent. Local runs, tests and previews upload to the folder `kagumi/dev/products`, production to `kagumi/products` (System Design §4.5). The Vitest tests stub Cloudinary and don't need these three |

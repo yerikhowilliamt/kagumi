@@ -156,7 +156,7 @@ Fixed-window counters for public endpoints (checkout, tracking).
 
 ### PendingDeletion (`pending_deletions`)
 
-Cloudinary assets whose destroy call failed. The daily cron retries them.
+Cloudinary assets queued for destroy (deletion through a queue, System Design §4.5): a row is written in the same transaction that deletes the product or medium, and removed after a successful destroy; a failed one stays with its attempts and last error, and the daily cron retries it.
 
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
