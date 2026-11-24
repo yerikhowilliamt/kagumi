@@ -5,7 +5,9 @@ import { loginAs } from "./admin";
 
 // M3.1 products list (FR7, FR22, M3 plan D5, D9, D14, D24; exit criterion 4) and M3.2 product form (D2, D9, D12, D18,
 // D19): on desktop one more product per run, created through the form (shown), edited, and hidden through the switch
-// before afterAll deletes it. Runs in the products-360 and
+// before afterAll deletes it. M3.3 delete (FR27, D4, design.md §7): on desktop one more product per run, shown through
+// the switch and deleted through the confirmation; afterAll deletes through the same path (deleteProductRow +
+// processDeletions). Runs in the products-360 and
 // products-desktop projects, after every storefront spec (D5). Write W4: per project two products named "E2E …",
 // inserted hidden (a direct insert can't expire the storefront cache, so a product becomes visible only through the
 // switch, D9), shown and hidden again through the switch, and deleted in afterAll; one rejected checkout on desktop
@@ -17,6 +19,8 @@ process.loadEnvFile();
 assertDevelopmentDatabase();
 // After the guard: db.ts reads DATABASE_URL on load.
 const { db } = await import("../src/lib/db.ts");
+const { deleteProductRow, processDeletions } = await import("../src/lib/products.ts");
+const { destroyAsset } = await import("../src/lib/cloudinary.ts");
 
 const runId = randomBytes(4).toString("hex");
 const SHOP = "https://wa.me/6285159545168";
@@ -25,7 +29,8 @@ type Fixture = { id: string; name: string };
 let listed: Fixture; // ready stock, Rp12.345, deadline 10 Des 2099: the switch's subject
 let closed: Fixture; // pre-order, no price, deadline 30 Mar 2026 (past): always hidden
 let created: string | undefined; // the form's product (M3.2), desktop only
-const fixtureIds = () => [listed?.id, closed?.id, created].filter((id): id is string => Boolean(id));
+let doomed: string | undefined; // the delete test's product (M3.3), desktop only
+const fixtureIds = () => [listed?.id, closed?.id, created, doomed].filter((id): id is string => Boolean(id));
 
 test.beforeAll(async ({}, info) => {
   const base = { category: "E2E", isActive: false, sortOrder: 9999, description: "Produk uji e2e." } as const;
@@ -41,7 +46,10 @@ test.beforeAll(async ({}, info) => {
 // through the switch (updateTag) first, also when a test failed half-way.
 test.afterAll(async ({ browser }, info) => {
   // The form's product is also found by its run id, in case the test failed before reading it from the URL.
-  const formMade = await db.product.findMany({ where: { name: { startsWith: "E2E form ", endsWith: ` ${runId} ${info.project.name}` } }, select: { id: true } });
+  const formMade = await db.product.findMany({
+    where: { OR: ["E2E form ", "E2E hapus "].map((prefix) => ({ name: { startsWith: prefix, endsWith: ` ${runId} ${info.project.name}` } })) },
+    select: { id: true },
+  });
   const ids = [...new Set([...fixtureIds(), ...formMade.map((p) => p.id)])];
   const visible = await db.product.findMany({ where: { id: { in: ids }, isActive: true } });
   if (visible.length > 0) {
@@ -52,7 +60,11 @@ test.afterAll(async ({ browser }, info) => {
     for (const product of visible) await toggle(page, product.name, false);
     await context.close();
   }
-  await db.product.deleteMany({ where: { id: { in: ids } } });
+  // The app's delete path (D4); a product the delete test already removed is null here.
+  for (const id of ids) {
+    const assets = await db.$transaction((tx) => deleteProductRow(tx, id), { maxWait: 10_000 });
+    if (assets?.length) await processDeletions(db, assets, (publicId, kind) => destroyAsset(publicId, kind));
+  }
 });
 
 const isDesktop = (page: Page) => (page.viewportSize()?.width ?? 0) > 760;
@@ -340,6 +352,71 @@ test.describe("product form on desktop (M3.2)", () => {
   });
 });
 
+test.describe("delete on desktop (M3.3)", () => {
+  test.beforeEach(({ page }) => test.skip(!isDesktop(page), "products-desktop only: one deleted product per run"));
+
+  test("the confirmation opens on Batal; Esc, Batal and Enter keep the product; Hapus deletes it from the list and the storefront (K6)", async ({ page, browser }, info) => {
+    const name = `E2E hapus ${runId} ${info.project.name}`;
+    doomed = (
+      await db.product.create({
+        data: { name, category: "E2E", description: "Produk uji hapus.", type: "READY_STOCK", price: 11111, isActive: false, sortOrder: 9999 },
+      })
+    ).id;
+    await loginAs(page, "products");
+    await page.goto("/admin/produk");
+    // Shown through the switch (D9), so the storefront lists it before the delete.
+    await toggle(page, name, true);
+    const before = await shopper(browser, info.testId, "before");
+    await before.goto("/");
+    await expect(menuCard(before, name)).toHaveCount(1);
+
+    await page.goto(`/admin/produk/${doomed}`);
+    const open = page.getByRole("button", { name: "Hapus produk" });
+    const dialog = page.getByRole("dialog", { name: `Hapus ${name}?` });
+    const cancel = dialog.getByRole("button", { name: "Batal" });
+    await open.click();
+    await expect(dialog).toBeVisible();
+    await expect(cancel).toBeFocused();
+    await expect(dialog).toContainText("Produk beserta semua foto dan videonya akan dihapus permanen. Pesanan lama tetap tersimpan.");
+    await expect(dialog.getByRole("button")).toHaveText(["Batal", "Hapus"]);
+    // Esc closes it and focus returns to "Hapus produk".
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+    await expect(open).toBeFocused();
+    // "Batal" closes it; Enter on the first focus is "Batal" too.
+    await open.click();
+    await cancel.click();
+    await expect(dialog).toBeHidden();
+    await open.click();
+    await expect(cancel).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(dialog).toBeHidden();
+    expect(await db.product.count({ where: { id: doomed } })).toBe(1);
+
+    // "Hapus": "Menghapus…" while the action runs (held back here), then the list without it.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route(`**/admin/produk/${doomed}`, async (route) => {
+      if (route.request().method() === "POST") await held;
+      await route.continue();
+    });
+    await open.click();
+    await dialog.getByRole("button", { name: "Hapus", exact: true }).click();
+    await expect(dialog.getByRole("button", { name: "Menghapus…" })).toHaveAttribute("aria-busy", "true");
+    release();
+    await expect(page).toHaveURL(/\/admin\/produk$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Produk");
+    await expect(row(page, name)).toHaveCount(0);
+    expect(await db.product.count({ where: { id: doomed } })).toBe(0);
+    // The storefront's next request lacks it (D9).
+    const after = await shopper(browser, info.testId, "after");
+    await after.goto("/");
+    await expect(after.locator("#menu")).toBeVisible();
+    await expect(after.getByText(name, { exact: true })).toHaveCount(0);
+    for (const p of [before, after]) await p.context().close();
+  });
+});
+
 test.describe("product form at 360 px (M3.2)", () => {
   test.beforeEach(({ page }) => test.skip(isDesktop(page), "products-360 only"));
 
@@ -409,6 +486,8 @@ test.describe("product form at 360 px (M3.2)", () => {
           field(page, /^Batas order/),
           page.getByRole("switch", { name: "Tampilkan di website" }),
           field(page, "Urutan tampil"),
+          // M3.3: "Hapus produk" on the edit page only.
+          ...(path.endsWith("baru") ? [] : [page.getByRole("button", { name: "Hapus produk" })]),
           page.getByRole("link", { name: "Batal" }),
           page.getByRole("button", { name: submit }),
         ];

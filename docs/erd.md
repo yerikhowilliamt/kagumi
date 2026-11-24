@@ -71,7 +71,7 @@ One photo or video of a product, stored on Cloudinary.
 | Field | Type | Constraints | Notes |
 |---|---|---|---|
 | id | uuid | PK | |
-| productId | uuid | FK → Product.id, not null, on delete cascade | The app deletes the Cloudinary asset first (or queues it in PendingDeletion) |
+| productId | uuid | FK → Product.id, not null, on delete cascade | The app queues the asset in PendingDeletion in the same transaction, then destroys it |
 | publicId | varchar(255) | unique, not null | Cloudinary public ID |
 | kind | enum `MediaKind` (`IMAGE`, `VIDEO`) | not null | Cloudinary resource type |
 | version | int | not null | Cloudinary version, used in delivery URLs for cache busting |
@@ -303,7 +303,7 @@ The partial unique index is written in raw SQL in the migration, because Prisma 
 | FK | On delete | Why |
 |---|---|---|
 | sessions.admin_id | cascade | Sessions are meaningless without the admin |
-| product_media.product_id | cascade | Media belongs to the product. The app removes Cloudinary assets first |
+| product_media.product_id | cascade | Media belongs to the product. The app queues its Cloudinary assets in `pending_deletions` in the same transaction, then destroys them |
 | order_items.order_id | cascade | Lines belong to the order |
 | order_items.product_id | set null | Past orders keep their snapshot when a product is deleted |
 | order_status_changes.order_id | cascade | History belongs to the order |

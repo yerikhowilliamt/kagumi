@@ -11,6 +11,7 @@ const outside = (e: MouseEvent<HTMLDialogElement>) => {
 // design.md §6 and §8: a native <dialog> opened with showModal(), so the browser traps focus, makes the page inert,
 // closes on Esc and puts focus back on the control that opened it. ✕ and a backdrop click close it too.
 // `modal`: centered, a bottom sheet at ≤ 760px (product detail). `side`: right-side panel, full width on mobile (cart).
+// `confirm`: small and centered at every width, no ✕ (design.md §7 delete confirmation: "Batal" closes it).
 export default function Dialog({
   open,
   onClose,
@@ -23,7 +24,7 @@ export default function Dialog({
   onClose: () => void;
   /** The id of the dialog's heading. */
   labelledBy: string;
-  variant?: "modal" | "side";
+  variant?: "modal" | "side" | "confirm";
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -46,9 +47,11 @@ export default function Dialog({
       onPointerDown={(e) => (pressedOutside.current = outside(e))}
       onClick={(e) => e.target === e.currentTarget && pressedOutside.current && outside(e) && e.currentTarget.close()}
     >
-      <button type="button" className={styles.close} aria-label="Tutup" onClick={() => ref.current!.close()}>
-        <span aria-hidden="true">✕</span>
-      </button>
+      {variant !== "confirm" && (
+        <button type="button" className={styles.close} aria-label="Tutup" onClick={() => ref.current!.close()}>
+          <span aria-hidden="true">✕</span>
+        </button>
+      )}
       {children}
     </dialog>
   );

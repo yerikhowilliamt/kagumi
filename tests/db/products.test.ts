@@ -6,7 +6,17 @@ import { describe, expect, it, vi } from "vitest";
 import { assertDevelopmentDatabase } from "../../prisma/seed.ts";
 import { placeOrder } from "@/lib/checkout";
 import { jakartaToday } from "@/lib/order";
-import { categories, getProduct, listProducts, nextSortOrder, productCounts, setActive, type ProductFilter } from "@/lib/products";
+import {
+  categories,
+  deleteProductRow,
+  getProduct,
+  listProducts,
+  nextSortOrder,
+  processDeletions,
+  productCounts,
+  setActive,
+  type ProductFilter,
+} from "@/lib/products";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is not set: tests/db needs the development branch in .env");
@@ -15,19 +25,24 @@ assertDevelopmentDatabase();
 
 // The session is the gate test's job (tests/admin-actions.test.ts), so requireAdmin passes here; updateTag and
 // revalidatePath need a Next request, so they are recorded instead.
-const { requireAdmin, updateTag, revalidatePath, state } = vi.hoisted(() => ({
+// destroyAsset is stubbed: no Cloudinary call from npm test (M3.3 task note 5).
+const { requireAdmin, updateTag, revalidatePath, destroyAsset, state } = vi.hoisted(() => ({
   requireAdmin: vi.fn(async () => ({ adminId: "test", sessionId: "test" })),
   updateTag: vi.fn(),
   revalidatePath: vi.fn(),
+  destroyAsset: vi.fn<(publicId: string, kind: string) => Promise<"ok" | "not_found">>(async () => "ok"),
   state: { tx: null as unknown },
 }));
 vi.mock("@/lib/auth", () => ({ requireAdmin }));
+vi.mock("@/lib/cloudinary", () => ({ destroyAsset }));
 vi.mock("next/cache", () => ({ updateTag, revalidatePath }));
 vi.mock("@/lib/db", async (importOriginal) => {
   const real = (await importOriginal<typeof import("@/lib/db")>()).db;
   return {
     db: new Proxy(real, {
       get(target, prop) {
+        // An action's own transaction runs inside the test's rolled-back one.
+        if (prop === "$transaction" && state.tx) return (fn: (tx: unknown) => unknown) => fn(state.tx);
         const client = (state.tx ?? target) as typeof real;
         const value = Reflect.get(client, prop);
         return typeof value === "function" ? value.bind(client) : value;
@@ -37,7 +52,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
 });
 
 const { db } = await import("@/lib/db");
-const { createProduct, setProductActive, updateProduct } = await import("@/app/admin/(protected)/produk/actions");
+const { createProduct, deleteProduct, setProductActive, updateProduct } = await import("@/app/admin/(protected)/produk/actions");
 
 type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
 const ROLLBACK = new Error("rollback");
@@ -311,6 +326,8 @@ async function redirectOf(run: () => Promise<unknown>) {
 }
 
 const resetMocks = () => {
+  destroyAsset.mockReset();
+  destroyAsset.mockResolvedValue("ok");
   requireAdmin.mockClear();
   updateTag.mockClear();
   revalidatePath.mockClear();
@@ -497,6 +514,159 @@ describe("updateProduct (K2, K3, D9, D13)", { timeout: 120_000 }, () => {
       resetMocks();
       expect(await updateProduct(null, formData({ id: randomUUID() }))).toEqual({ ok: false, error: "server" });
       expect(log.mock.calls).toEqual([["[updateProduct] failed", "PrismaClientKnownRequestError", "P1001"]]);
+      expect(updateTag).not.toHaveBeenCalled();
+    } finally {
+      state.tx = null;
+      log.mockRestore();
+    }
+  });
+});
+
+// M3.3 K5, exit criterion 3 (M3 plan D4, FR27, ERD set-null): the queue rows are written with the delete, before any
+// destroy; a destroyed asset leaves the queue, a failed one stays with attempts + 1 and its error; past orders keep
+// the name and price.
+describe("delete through the queue (M3.3 K5, exit criterion 3)", { timeout: 120_000 }, () => {
+  /** A product with an image, a video, one order line and one event. */
+  async function deletable(tx: Tx) {
+    const p = await product(tx, { price: 35000 });
+    const assets = [await media(tx, p.id, "IMAGE"), await media(tx, p.id, "VIDEO")].map((m) => ({ publicId: m.publicId, kind: m.kind }));
+    const order = await tx.order.create({
+      data: {
+        id: -9_000_000 - Math.floor(Math.random() * 1_000_000), // negative: never collides with real orders
+        customerName: "Test M3.3",
+        customerPhone: "6280000000000",
+        fulfillment: "PICKUP",
+        requestedDate: new Date("2026-11-25T00:00:00Z"),
+        items: { create: { productId: p.id, productName: p.name, unitPrice: 35000, quantity: 2 } },
+      },
+      select: { id: true },
+    });
+    const event = await tx.event.create({ data: { type: "PRODUCT_VIEW", productId: p.id, visitorHash: "0".repeat(64) }, select: { id: true } });
+    return { p, assets, orderId: order.id, eventId: event.id };
+  }
+  const queue = (tx: Tx, assets: { publicId: string }[]) =>
+    tx.pendingDeletion.findMany({ where: { publicId: { in: assets.map((a) => a.publicId) } }, orderBy: { publicId: "asc" } });
+
+  it("queues every medium and deletes the product in one step; order lines and events keep their rows", async () => {
+    await rolledBack(async (tx) => {
+      const { p, assets, orderId, eventId } = await deletable(tx);
+      const destroy = vi.fn();
+      const queued = await deleteProductRow(tx, p.id);
+      expect(queued?.toSorted((a, b) => a.publicId.localeCompare(b.publicId))).toEqual(assets.toSorted((a, b) => a.publicId.localeCompare(b.publicId)));
+      // The function could stop here: both assets are on record, nothing destroyed yet.
+      expect(destroy).not.toHaveBeenCalled();
+      const rows = await queue(tx, assets);
+      expect(rows.map((r) => [r.publicId, r.kind, r.attempts, r.lastError])).toEqual(
+        assets.toSorted((a, b) => a.publicId.localeCompare(b.publicId)).map((a) => [a.publicId, a.kind, 0, null]),
+      );
+      expect(await tx.product.count({ where: { id: p.id } })).toBe(0);
+      expect(await tx.productMedia.count({ where: { productId: p.id } })).toBe(0);
+      const [line] = await tx.orderItem.findMany({ where: { orderId } });
+      expect(line).toMatchObject({ productId: null, productName: p.name, unitPrice: 35000, quantity: 2 });
+      expect(await tx.event.findUnique({ where: { id: eventId } })).toMatchObject({ productId: null, type: "PRODUCT_VIEW" });
+    });
+  });
+
+  it("a product with no media queues nothing; an unknown id is null and writes nothing", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx);
+      const before = await tx.pendingDeletion.count();
+      expect(await deleteProductRow(tx, p.id)).toEqual([]);
+      expect(await deleteProductRow(tx, randomUUID())).toBeNull();
+      expect(await tx.pendingDeletion.count()).toBe(before);
+    });
+  });
+
+  it("processDeletions: every destroy succeeds → no queue row left", async () => {
+    await rolledBack(async (tx) => {
+      const { p, assets } = await deletable(tx);
+      const queued = (await deleteProductRow(tx, p.id))!;
+      const destroy = vi.fn(async () => "ok" as const);
+      expect(await processDeletions(tx, queued, destroy)).toBe(0);
+      expect(destroy.mock.calls.toSorted()).toEqual(assets.map((a) => [a.publicId, a.kind]).toSorted());
+      expect(await queue(tx, assets)).toEqual([]);
+    });
+  });
+
+  it("processDeletions: one destroy fails → its row stays with attempts 1 and last_error, the other is gone", async () => {
+    await rolledBack(async (tx) => {
+      const { p, assets } = await deletable(tx);
+      const queued = (await deleteProductRow(tx, p.id))!;
+      const [bad] = assets;
+      const destroy = vi.fn(async (publicId: string) => {
+        if (publicId === bad.publicId) throw new Error("Cloudinary destroy: HTTP 500: General Error");
+        return "not_found" as const; // already gone counts as done
+      });
+      expect(await processDeletions(tx, queued, destroy)).toBe(1);
+      const rows = await queue(tx, assets);
+      expect(rows.map((r) => [r.publicId, r.attempts, r.lastError])).toEqual([[bad.publicId, 1, "Cloudinary destroy: HTTP 500: General Error"]]);
+      // A second failure counts up; last_error is capped at the column's 500 characters.
+      await processDeletions(tx, [bad], async () => Promise.reject(new Error("x".repeat(600))));
+      expect(await queue(tx, [bad])).toMatchObject([{ attempts: 2, lastError: "x".repeat(500) }]);
+    });
+  });
+
+  it("deleteProduct: queue, destroy, D9, then the products list", async () => {
+    await rolledBack(async (tx) => {
+      resetMocks();
+      const { p, assets, orderId } = await deletable(tx);
+      expect(await redirectOf(() => deleteProduct(p.id))).toBe("/admin/produk");
+      expect(requireAdmin).toHaveBeenCalledTimes(1);
+      expect(destroyAsset.mock.calls.toSorted()).toEqual(assets.map((a) => [a.publicId, a.kind]).toSorted());
+      expect(await queue(tx, assets)).toEqual([]);
+      expect(await tx.product.count({ where: { id: p.id } })).toBe(0);
+      expect(await tx.orderItem.findFirst({ where: { orderId } })).toMatchObject({ productId: null, productName: p.name, unitPrice: 35000 });
+      expect(updateTag).toHaveBeenCalledWith("products");
+      expect(revalidatePath).toHaveBeenCalledWith("/admin", "layout");
+    });
+  });
+
+  it("deleteProduct: a failed destroy still deletes the product and leaves the asset queued, with one log line", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await rolledBack(async (tx) => {
+        resetMocks();
+        const { p, assets } = await deletable(tx);
+        destroyAsset.mockRejectedValue(new Error("Cloudinary destroy: network error"));
+        expect(await redirectOf(() => deleteProduct(p.id))).toBe("/admin/produk");
+        expect(await queue(tx, assets)).toMatchObject(assets.map(() => ({ attempts: 1, lastError: "Cloudinary destroy: network error" })));
+        expect(await tx.product.count({ where: { id: p.id } })).toBe(0);
+        expect(log.mock.calls).toEqual([["[deleteProduct] destroy failed, left in pending_deletions:", 2]]);
+        expect(updateTag).toHaveBeenCalledWith("products");
+      });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it("deleteProduct: not_found for an unknown id, validation before any database read", async () => {
+    await rolledBack(async () => {
+      resetMocks();
+      expect(await deleteProduct(randomUUID())).toEqual({ ok: false, error: "not_found" });
+      expect(updateTag).not.toHaveBeenCalled();
+      expect(destroyAsset).not.toHaveBeenCalled();
+    });
+    const reads: string[] = [];
+    state.tx = new Proxy({}, { get: (_target, prop) => void reads.push(String(prop)) });
+    try {
+      resetMocks();
+      for (const id of [undefined, "", "abc", "-".repeat(36), `${randomUUID()}x`, 42]) {
+        expect(await deleteProduct(id as string), String(id)).toEqual({ ok: false, error: "validation" });
+      }
+      expect(reads).toEqual([]);
+    } finally {
+      state.tx = null;
+    }
+  });
+
+  it("deleteProduct: server on a database error, with one log line holding the error name and code only", async () => {
+    const error = Object.assign(new Error("secret product data"), { name: "PrismaClientKnownRequestError", code: "P1001" });
+    state.tx = { $queryRaw: async () => Promise.reject(error) };
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      resetMocks();
+      expect(await deleteProduct(randomUUID())).toEqual({ ok: false, error: "server" });
+      expect(log.mock.calls).toEqual([["[deleteProduct] failed", "PrismaClientKnownRequestError", "P1001"]]);
       expect(updateTag).not.toHaveBeenCalled();
     } finally {
       state.tx = null;

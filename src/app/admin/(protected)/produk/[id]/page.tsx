@@ -6,9 +6,10 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { categories, getProduct } from "@/lib/products";
 import detail from "../../pesanan/[id]/page.module.css";
+import DeleteProduct from "../DeleteProduct";
 import ProductForm from "../ProductForm";
 
-// FR22 edit (M3 plan D12, D13). The media panel comes in M3.4, "Hapus produk" in M3.3.
+// FR22 edit and FR27 delete (M3 plan D4, D12, D13). The media panel comes in M3.4.
 export default async function EditProductPage({ params }: PageProps<"/admin/produk/[id]">) {
   await requireAdmin();
   const { id } = await params;
@@ -31,7 +32,7 @@ export default async function EditProductPage({ params }: PageProps<"/admin/prod
         </div>
       </div>
       {/* Not keyed by the row: a save re-renders this page, and the form must keep its "Tersimpan." line. */}
-      <ProductForm product={product} categories={suggestions} />
+      <ProductForm product={product} categories={suggestions} danger={<DeleteProduct id={product.id} name={product.name} />} />
     </main>
   );
 }

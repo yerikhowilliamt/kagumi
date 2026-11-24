@@ -119,6 +119,17 @@
   background: var(--whatsapp-hover);
 }
 
+/* "Hapus produk" and its confirmation (admin). */
+.danger {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--error) 35%, transparent);
+  color: var(--error);
+}
+
+.danger:hover {
+  background: var(--error-bg);
+}
+
 /* Lift only where hover exists: on touch it would stick after the tap. */
 @media (hover: hover) {
   .primary:hover,

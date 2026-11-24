@@ -4,8 +4,9 @@ import { revalidatePath, updateTag } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
+import { destroyAsset } from "@/lib/cloudinary";
 import { db } from "@/lib/db";
-import { createProductRow, setActive, updateProductRow } from "@/lib/products";
+import { createProductRow, deleteProductRow, processDeletions, setActive, updateProductRow } from "@/lib/products";
 import { productInput, type ProductData, type ProductField } from "@/lib/validation";
 
 type Fail = { ok: false; error: "validation" | "not_found" | "server" };
@@ -88,4 +89,33 @@ export async function updateProduct(_prev: ProductFormState, form: FormData): Pr
   if (!found) return { ok: false, error: "not_found" };
   revalidateProducts();
   return { ok: true };
+}
+
+/**
+ * FR27 delete (M3 plan D4, D13): the product and its queue rows in one transaction, then each asset destroyed. A failed
+ * destroy stays in pending_deletions for the cron and doesn't fail the delete. Success → the products list.
+ */
+export async function deleteProduct(productId: string): Promise<Fail> {
+  await requireAdmin();
+  const id = z.uuid().safeParse(productId);
+  if (!id.success) return { ok: false, error: "validation" };
+  let assets;
+  try {
+    assets = await db.$transaction((tx) => deleteProductRow(tx, id.data), {
+      maxWait: 10_000, // opening a Neon connection can take longer than Prisma's 2 s default (ERR-003)
+    });
+  } catch (error) {
+    logFailure("deleteProduct", error);
+    return { ok: false, error: "server" };
+  }
+  if (!assets) return { ok: false, error: "not_found" };
+  revalidateProducts();
+  // Awaited, not after(): the function may stop once it has answered, and the queue rows already make this safe.
+  try {
+    const failed = await processDeletions(db, assets, (publicId, kind) => destroyAsset(publicId, kind));
+    if (failed > 0) console.error("[deleteProduct] destroy failed, left in pending_deletions:", failed);
+  } catch (error) {
+    logFailure("deleteProduct", error);
+  }
+  redirect("/admin/produk");
 }

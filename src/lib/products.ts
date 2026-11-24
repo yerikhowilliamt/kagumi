@@ -105,3 +105,45 @@ export async function updateProductRow(client: Client, id: string, input: Produc
   const { count } = await client.product.updateMany({ where: { id }, data: { ...input, orderDeadline: toDate(input.orderDeadline) } });
   return count > 0;
 }
+
+export type QueuedAsset = { publicId: string; kind: "IMAGE" | "VIDEO" };
+
+/**
+ * D4, FR27 step 1, inside the caller's transaction: locks the product row, queues every medium in pending_deletions and
+ * deletes the product (its media rows cascade; order lines and events keep their rows with product_id null). Returns
+ * the queued assets, or null when the id has no row. The lock keeps a concurrent upload (M3.4) from adding a medium that
+ * would cascade away unqueued.
+ */
+export async function deleteProductRow(tx: Client, id: string): Promise<QueuedAsset[] | null> {
+  const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM products WHERE id = ${id}::uuid FOR UPDATE`;
+  if (locked.length === 0) return null;
+  const media = await tx.productMedia.findMany({ where: { productId: id }, select: { publicId: true, kind: true } });
+  if (media.length > 0) await tx.pendingDeletion.createMany({ data: media });
+  await tx.product.delete({ where: { id } });
+  return media;
+}
+
+/**
+ * D4 step 2, after the commit: destroys each queued asset; on success its queue row is deleted, on failure `attempts`
+ * goes up by one and `last_error` holds the error's message (status and Cloudinary's text, never a secret). The daily
+ * cron retries what is left. Returns the number of failures.
+ */
+export async function processDeletions(
+  client: Client,
+  assets: QueuedAsset[],
+  destroy: (publicId: string, kind: QueuedAsset["kind"]) => Promise<unknown>,
+) {
+  let failed = 0;
+  for (const { publicId, kind } of assets) {
+    try {
+      await destroy(publicId, kind);
+    } catch (error) {
+      failed += 1;
+      const lastError = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+      await client.pendingDeletion.updateMany({ where: { publicId }, data: { attempts: { increment: 1 }, lastError } });
+      continue;
+    }
+    await client.pendingDeletion.deleteMany({ where: { publicId } });
+  }
+  return failed;
+}

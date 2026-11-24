@@ -121,6 +121,31 @@
   }
 }
 
+/* design.md §7 delete confirmation: max 400px, radius 24px, padding 28px, centered at every width; pops like modal. */
+.confirm {
+  box-sizing: border-box;
+  width: min(400px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 28px;
+  border-radius: 24px;
+  opacity: 0;
+  scale: 0.97;
+}
+
+.confirm[open] {
+  display: block;
+  opacity: 1;
+  scale: 1;
+}
+
+@starting-style {
+  .confirm[open] {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+
 @media (max-width: 760px) {
   /* design.md §4 Breakpoints: the cart sheet is full width (BSA-M1.5-03). */
   .side {

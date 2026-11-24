@@ -23,8 +23,19 @@ const ORDER: ProductField[] = ["name", "category", "price", "description", "orde
 
 // design.md §7 Product form, Informasi produk panel and the sticky action bar; M3 plan D12, D13. No client checks: the
 // server's messages are the only rule set (task note 4). Submitted from onSubmit, not the form's action prop, so React
-// never resets the typed values (K3). `children` is the right-hand panel.
-export default function ProductForm({ product, categories, children }: { product: ProductValues; categories: string[]; children?: ReactNode }) {
+// never resets the typed values (K3). `children` is the right-hand panel; `danger` sits at the left of the action bar
+// ("Hapus produk" on the edit page, M3.3).
+export default function ProductForm({
+  product,
+  categories,
+  children,
+  danger,
+}: {
+  product: ProductValues;
+  categories: string[];
+  children?: ReactNode;
+  danger?: ReactNode;
+}) {
   const editing = product.id !== undefined;
   // attempt keys the alert, so a repeated failure is announced again (as LoginForm).
   const [state, dispatch, pending] = useActionState(
@@ -151,6 +162,7 @@ export default function ProductForm({ product, categories, children }: { product
             Perubahan belum tersimpan. Coba lagi.
           </p>
         )}
+        {danger}
         <p className={styles.saved} role="status">
           {result?.ok && !pending ? "Tersimpan." : ""}
         </p>

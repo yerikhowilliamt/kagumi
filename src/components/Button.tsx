@@ -2,7 +2,7 @@ import type { ComponentProps, ReactNode } from "react";
 import styles from "./Button.module.css";
 
 type Common = {
-  variant?: "primary" | "line" | "butter" | "whatsapp" | "text";
+  variant?: "primary" | "line" | "butter" | "whatsapp" | "danger" | "text";
   /** lg 50px (storefront), md 46px (sheet, detail), nav 42px, sm 34px. Ignored by the text variant. */
   size?: "lg" | "md" | "nav" | "sm";
   /** Full width, for sheets. */

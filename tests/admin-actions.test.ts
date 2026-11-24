@@ -144,6 +144,7 @@ describe("admin gate (D4, D12)", () => {
       expect(called).toContain("setProductActive");
       expect(called).toContain("createProduct");
       expect(called).toContain("updateProduct");
+      expect(called).toContain("deleteProduct");
     });
 
     // The default export and every function Next calls per request for the route (TR-M2.2-01).
@@ -256,11 +257,21 @@ describe("e2e global setup (D14, K8)", () => {
       order.push("db");
       return {
         db: {
-          $transaction: (run: (tx: unknown) => unknown) => run({}),
-          product: { deleteMany: async (args: unknown) => void (order.push("delete products"), deletes.push(args)) },
+          $transaction: (run: (tx: unknown) => unknown) => run({ tx: true }),
+          // One leftover with a medium, one without (M3.3: the delete path of D4).
+          product: { findMany: async (args: unknown) => (order.push("find products"), deletes.push(args), [{ id: "p1" }, { id: "p2" }]) },
         },
       };
     });
+    vi.doMock("../src/lib/products.ts", () => ({
+      deleteProductRow: async (tx: unknown, id: string) => (deletes.push(["deleteProductRow", tx, id]), id === "p1" ? [{ publicId: "kagumi/dev/products/x", kind: "IMAGE" }] : []),
+      processDeletions: async (client: unknown, assets: unknown, destroy: (publicId: string, kind: string) => unknown) => {
+        deletes.push(["processDeletions", assets]);
+        await destroy("kagumi/dev/products/x", "IMAGE");
+        return 0;
+      },
+    }));
+    vi.doMock("../src/lib/cloudinary.ts", () => ({ destroyAsset: async (...args: unknown[]) => void deletes.push(["destroyAsset", ...args]) }));
     const { default: globalSetup } = await import("../e2e/global-setup.ts");
     const { ADMIN_ACCOUNTS, passwordVar } = await import("../e2e/admin.ts");
     const outcome = await globalSetup().then(
@@ -272,6 +283,8 @@ describe("e2e global setup (D14, K8)", () => {
     vi.doUnmock("../prisma/seed.ts");
     vi.doUnmock("../scripts/create-admin.ts");
     vi.doUnmock("../src/lib/db.ts");
+    vi.doUnmock("../src/lib/products.ts");
+    vi.doUnmock("../src/lib/cloudinary.ts");
     vi.resetModules();
     return { outcome, order, resets, deletes, passwords, ADMIN_ACCOUNTS, printed: [...log.mock.calls, ...error.mock.calls] };
   }
@@ -279,8 +292,15 @@ describe("e2e global setup (D14, K8)", () => {
   it("without it: loads .env, checks the development host before importing db, resets every account, deletes leftover E2E products (M3 D24), prints nothing", async () => {
     const run = await runSetup(() => {});
     expect(run.outcome).toBe("resolved");
-    expect(run.order).toEqual(["load", "assert", "db", "delete products"]);
-    expect(run.deletes).toEqual([{ where: { name: { startsWith: "E2E " } } }]);
+    expect(run.order).toEqual(["load", "assert", "db", "find products"]);
+    // Each leftover E2E product goes through the delete transaction; only queued media reach the real destroy.
+    expect(run.deletes).toEqual([
+      { where: { name: { startsWith: "E2E " } }, select: { id: true } },
+      ["deleteProductRow", { tx: true }, "p1"],
+      ["processDeletions", [{ publicId: "kagumi/dev/products/x", kind: "IMAGE" }]],
+      ["destroyAsset", "kagumi/dev/products/x", "IMAGE"],
+      ["deleteProductRow", { tx: true }, "p2"],
+    ]);
     expect(run.resets.map((r) => r.email)).toEqual(Object.values(run.ADMIN_ACCOUNTS));
     const passwords = run.resets.map((r) => r.password);
     for (const password of passwords) expect(password).toMatch(/^[A-Za-z0-9_-]{32}$/);

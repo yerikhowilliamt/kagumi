@@ -21,8 +21,14 @@ export default async function globalSetup() {
     process.env[passwordVar(account)] = password;
   }
   // M3 plan D5, D24 (write W3): products left by a failed run of a product spec would break the storefront specs.
-  // They have no media before M3.4, so the row is deleted directly (M3.3 moves this to the delete path).
+  // Deleted through the app's delete path (D4): queue rows with the delete, then the real Cloudinary destroy; a failed
+  // destroy stays queued on the development branch.
   // shortcut: this runs outside a request, so it can't expire the storefront cache; a leftover that was still visible
   // (a run killed before its afterAll hid it) stays in the cached list until the next updateTag or the hour.
-  await db.product.deleteMany({ where: { name: { startsWith: "E2E " } } });
+  const { deleteProductRow, processDeletions } = await import("../src/lib/products.ts");
+  const { destroyAsset } = await import("../src/lib/cloudinary.ts");
+  for (const { id } of await db.product.findMany({ where: { name: { startsWith: "E2E " } }, select: { id: true } })) {
+    const assets = await db.$transaction((tx) => deleteProductRow(tx, id), { maxWait: 10_000 });
+    if (assets?.length) await processDeletions(db, assets, (publicId, kind) => destroyAsset(publicId, kind));
+  }
 }
