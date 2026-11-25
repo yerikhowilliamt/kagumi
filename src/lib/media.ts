@@ -45,6 +45,23 @@ export function checkFile(
   return { ok: true, kind };
 }
 
+/** The file picker's filter (D16 step 1); checkFile stays the rule, since a drop or a picker can ignore it. */
+export const ACCEPT = ".jpg,.jpeg,.png,.webp,.heic,.mp4,.mov";
+
+/** The message of a refused or failed file (M3 plan D18). A folder refusal is not the owner's doing. */
+export function refusalMessage(reason: MediaRefusal, kind: MediaKind | null): string {
+  if (reason === "format") return "Format file tidak didukung.";
+  if (reason === "duration") return "Video lebih dari 30 detik.";
+  if (reason === "size") return kind === "VIDEO" ? "Video lebih dari 50 MB." : "Foto lebih dari 10 MB.";
+  return "Upload gagal. Coba lagi.";
+}
+
+/** A video's duration chip, "m:ss". */
+export function formatDuration(seconds: number): string {
+  const s = Math.round(seconds);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
 type Media = { publicId: string; version: number };
 // Read at call time; NEXT_PUBLIC_ is inlined into client code at build time (D15).
 const base = () => `https://res.cloudinary.com/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}`;

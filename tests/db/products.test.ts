@@ -1,20 +1,29 @@
-// Admin product queries and actions against the development branch (task M3.1 K2, K3, K5, K6; M3.2 K2–K4), written
-// from the M3 plan D9, D12, D13, D14 and exit criterion 4. Every test runs in a transaction that is always rolled back, with a
-// fixed `now` (W2): nothing persists. The action's `db` is that transaction while a test runs.
+// Admin product queries and actions against the development branch (task M3.1 K2, K3, K5, K6; M3.2 K2–K4; M3.3 K5;
+// M3.4 K3, K4), written from the M3 plan D4, D9–D14, D16 and exit criteria 2–4. Every test runs in a transaction that
+// is always rolled back, with a fixed `now` (W2): nothing persists. The action's `db` is that transaction while a test
+// runs. The one exception is the M3.4 barrier test, which commits one product "Test M3 …" with media rows that were
+// never uploaded and deletes it at the end.
 import { randomBytes, randomUUID } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { assertDevelopmentDatabase } from "../../prisma/seed.ts";
 import { placeOrder } from "@/lib/checkout";
 import { jakartaToday } from "@/lib/order";
+import { signParams } from "@/lib/cloudinary";
 import {
+  addMediaRow,
   categories,
+  deleteMediaRow,
   deleteProductRow,
   getProduct,
+  listMedia,
   listProducts,
+  moveRow,
   nextSortOrder,
   processDeletions,
   productCounts,
   setActive,
+  setMainRow,
+  type NewMedia,
   type ProductFilter,
 } from "@/lib/products";
 
@@ -34,7 +43,8 @@ const { requireAdmin, updateTag, revalidatePath, destroyAsset, state } = vi.hois
   state: { tx: null as unknown },
 }));
 vi.mock("@/lib/auth", () => ({ requireAdmin }));
-vi.mock("@/lib/cloudinary", () => ({ destroyAsset }));
+// Signing, verification and the upload check stay real (M3.4 K3); only the destroy is stubbed.
+vi.mock("@/lib/cloudinary", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/cloudinary")>()), destroyAsset }));
 vi.mock("next/cache", () => ({ updateTag, revalidatePath }));
 vi.mock("@/lib/db", async (importOriginal) => {
   const real = (await importOriginal<typeof import("@/lib/db")>()).db;
@@ -52,7 +62,9 @@ vi.mock("@/lib/db", async (importOriginal) => {
 });
 
 const { db } = await import("@/lib/db");
-const { createProduct, deleteProduct, setProductActive, updateProduct } = await import("@/app/admin/(protected)/produk/actions");
+const { addProductMedia, createProduct, deleteMedia, deleteProduct, moveMedia, setMainMedia, setProductActive, updateProduct } = await import(
+  "@/app/admin/(protected)/produk/actions"
+);
 
 type Tx = Parameters<Parameters<typeof db.$transaction>[0]>[0];
 const ROLLBACK = new Error("rollback");
@@ -736,5 +748,414 @@ describe("delete through the queue (M3.3 K5, exit criterion 3)", { timeout: 120_
       state.tx = null;
       log.mockRestore();
     }
+  });
+});
+
+// M3.4 media (K3, K4; exit criterion 2): D11 rules, the D16 server check and D4 for every failure after the upload.
+describe("media rules (M3.4 K4, D11)", { timeout: 120_000 }, () => {
+  const asset = (kind: "IMAGE" | "VIDEO"): NewMedia => ({
+    publicId: `kagumi/dev/products/test-${randomUUID()}`,
+    kind,
+    version: 1,
+    format: kind === "IMAGE" ? "jpg" : "mp4",
+    width: 10,
+    height: 10,
+    bytes: 1,
+    durationSec: kind === "VIDEO" ? 2 : null,
+  });
+  /** [kind, isMain] per medium in display order, with their ids. */
+  const shown = async (tx: Tx, productId: string) => (await listMedia(tx, productId)).map((m) => ({ id: m.id, kind: m.kind, isMain: m.isMain }));
+  const added = async (tx: Tx, productId: string, kind: "IMAGE" | "VIDEO") => {
+    const row = await addMediaRow(tx, productId, asset(kind));
+    if (typeof row === "string") throw new Error(row);
+    return row;
+  };
+
+  it("a new medium gets max + 1; the first image becomes main by itself, a video never, later images not", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx);
+      const video = await added(tx, p.id, "VIDEO");
+      expect(video).toMatchObject({ isMain: false, sortOrder: 0, durationSec: 2 });
+      const first = await added(tx, p.id, "IMAGE");
+      expect(first).toMatchObject({ isMain: true, sortOrder: 1 });
+      const second = await added(tx, p.id, "IMAGE");
+      expect(second).toMatchObject({ isMain: false, sortOrder: 2 });
+      // Display order: the main one first, then sortOrder.
+      expect((await shown(tx, p.id)).map((m) => m.id)).toEqual([first.id, video.id, second.id]);
+    });
+  });
+
+  it("addMediaRow: not_found for an unknown product, duplicate for a public_id already saved; neither writes a row", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx);
+      expect(await addMediaRow(tx, randomUUID(), asset("IMAGE"))).toBe("not_found");
+      const a = asset("IMAGE");
+      await addMediaRow(tx, p.id, a);
+      expect(await addMediaRow(tx, p.id, { ...a, version: 2 })).toBe("duplicate");
+      expect(await tx.productMedia.count({ where: { publicId: a.publicId } })).toBe(1);
+    });
+  });
+
+  it("setMainRow moves the flag between images in one step; a video can't be main; another product's medium is not found", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx);
+      const other = await product(tx);
+      const first = await added(tx, p.id, "IMAGE");
+      const video = await added(tx, p.id, "VIDEO");
+      const second = await added(tx, p.id, "IMAGE");
+      expect(await setMainRow(tx, p.id, second.id)).toBe("ok");
+      expect(await shown(tx, p.id)).toEqual([
+        { id: second.id, kind: "IMAGE", isMain: true },
+        { id: first.id, kind: "IMAGE", isMain: false },
+        { id: video.id, kind: "VIDEO", isMain: false },
+      ]);
+      expect(await setMainRow(tx, p.id, second.id)).toBe("unchanged");
+      expect(await setMainRow(tx, p.id, video.id)).toBe("video");
+      expect(await setMainRow(tx, other.id, first.id)).toBe("not_found");
+      expect(await setMainRow(tx, randomUUID(), first.id)).toBe("not_found");
+      expect((await shown(tx, p.id)).filter((m) => m.isMain).map((m) => m.id)).toEqual([second.id]);
+    });
+  });
+
+  it("moveRow swaps with the neighbour after the main one; the main one and the ends can't move", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx);
+      const main = await added(tx, p.id, "IMAGE");
+      const a = await added(tx, p.id, "VIDEO");
+      const b = await added(tx, p.id, "IMAGE");
+      const c = await added(tx, p.id, "IMAGE");
+      const order = async () => (await shown(tx, p.id)).map((m) => m.id);
+      expect(await moveRow(tx, p.id, c.id, "left")).toBe("ok");
+      expect(await order()).toEqual([main.id, a.id, c.id, b.id]);
+      expect(await moveRow(tx, p.id, a.id, "right")).toBe("ok");
+      expect(await order()).toEqual([main.id, c.id, a.id, b.id]);
+      expect(await moveRow(tx, p.id, main.id, "right")).toBe("invalid");
+      expect(await moveRow(tx, p.id, c.id, "left")).toBe("invalid");
+      expect(await moveRow(tx, p.id, b.id, "right")).toBe("invalid");
+      expect(await moveRow(tx, p.id, randomUUID(), "left")).toBe("not_found");
+      expect(await order()).toEqual([main.id, c.id, a.id, b.id]);
+    });
+  });
+
+  it("moveRow still swaps when two media share a sortOrder", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx);
+      await added(tx, p.id, "IMAGE");
+      const a = await added(tx, p.id, "VIDEO");
+      const b = await added(tx, p.id, "VIDEO");
+      await tx.productMedia.updateMany({ where: { id: { in: [a.id, b.id] } }, data: { sortOrder: 5 } });
+      const [, first, second] = await shown(tx, p.id);
+      expect(await moveRow(tx, p.id, second.id, "left")).toBe("ok");
+      expect((await shown(tx, p.id)).slice(1).map((m) => m.id)).toEqual([second.id, first.id]);
+    });
+  });
+
+  it("deleteMediaRow queues the asset; deleting the main photo makes the next image main; no image left → no main", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx);
+      const main = await added(tx, p.id, "IMAGE");
+      const video = await added(tx, p.id, "VIDEO");
+      const next = await added(tx, p.id, "IMAGE");
+      expect(await deleteMediaRow(tx, p.id, main.id)).toEqual({ publicId: main.publicId, kind: "IMAGE" });
+      expect(await tx.pendingDeletion.findUnique({ where: { publicId: main.publicId } })).toMatchObject({ kind: "IMAGE", attempts: 0 });
+      // The video came before the next image in sortOrder; only an image can be main.
+      expect(await shown(tx, p.id)).toEqual([
+        { id: next.id, kind: "IMAGE", isMain: true },
+        { id: video.id, kind: "VIDEO", isMain: false },
+      ]);
+      await deleteMediaRow(tx, p.id, next.id);
+      expect(await shown(tx, p.id)).toEqual([{ id: video.id, kind: "VIDEO", isMain: false }]);
+      expect(await deleteMediaRow(tx, p.id, randomUUID())).toBeNull();
+      expect(await deleteMediaRow(tx, (await product(tx)).id, video.id)).toBeNull();
+      expect(await tx.productMedia.count({ where: { id: video.id } })).toBe(1);
+    });
+  });
+});
+
+describe("media actions (M3.4 K3, D4, D9, D16; exit criterion 2)", { timeout: 120_000 }, () => {
+  const SECRET = "test-secret-not-real";
+  const stubKeys = () => {
+    vi.stubEnv("NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME", "test-cloud");
+    vi.stubEnv("CLOUDINARY_API_KEY", "test-key");
+    vi.stubEnv("CLOUDINARY_API_SECRET", SECRET);
+    vi.stubEnv("VERCEL_ENV", "");
+  };
+  /** A Cloudinary upload response, signed as Cloudinary signs it (C4, SHA-1 as W5 saw). */
+  const response = (fields: Record<string, unknown> = {}) => {
+    const r = {
+      public_id: `kagumi/dev/products/test-${randomUUID()}`,
+      version: 1732400000,
+      resource_type: "image",
+      format: "jpg",
+      bytes: 1000,
+      width: 160,
+      height: 200,
+      duration: null as number | null,
+      ...fields,
+    };
+    return { ...r, signature: signParams({ public_id: r.public_id, version: r.version }, SECRET, "sha1") };
+  };
+  const queued = (tx: Tx, publicId: string) => tx.pendingDeletion.count({ where: { publicId } });
+  const inAction = async (fn: () => Promise<void>) => {
+    stubKeys();
+    try {
+      await fn();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  };
+
+  it("saves a verified upload: the row, D9, and nothing queued or destroyed", async () => {
+    await inAction(() =>
+      rolledBack(async (tx) => {
+        resetMocks();
+        const p = await product(tx);
+        const r = response();
+        const result = await addProductMedia(p.id, { ...r, extra: "dropped" });
+        expect(result).toMatchObject({ ok: true, media: { publicId: r.public_id, kind: "IMAGE", isMain: true, format: "jpg", bytes: 1000, durationSec: null } });
+        expect(requireAdmin).toHaveBeenCalledTimes(1);
+        expect(updateTag).toHaveBeenCalledWith("products");
+        expect(revalidatePath).toHaveBeenCalledWith("/admin", "layout");
+        expect(destroyAsset).not.toHaveBeenCalled();
+        expect(await queued(tx, r.public_id)).toBe(0);
+        const video = response({ resource_type: "video", format: "mp4", duration: 2.5 });
+        expect(await addProductMedia(p.id, video)).toMatchObject({ ok: true, media: { kind: "VIDEO", isMain: false, durationSec: 2.5 } });
+      }),
+    );
+  });
+
+  it("K3: bytes, format, duration or folder out of rule → no row, the public_id queued, the destroy called, limit with the reason", async () => {
+    const MiB = 1024 * 1024;
+    const cases: [Record<string, unknown>, string, "IMAGE" | "VIDEO"][] = [
+      [{ bytes: 10 * MiB + 1 }, "size", "IMAGE"],
+      [{ resource_type: "video", format: "mp4", bytes: 50 * MiB + 1, duration: 5 }, "size", "VIDEO"],
+      [{ format: "gif" }, "format", "IMAGE"],
+      [{ resource_type: "video", format: "mp4", duration: 30.5 }, "duration", "VIDEO"],
+      [{ public_id: `kagumi/products/test-${randomUUID()}` }, "folder", "IMAGE"],
+      [{ public_id: `elsewhere/test-${randomUUID()}` }, "folder", "IMAGE"],
+    ];
+    await inAction(() =>
+      rolledBack(async (tx) => {
+        const p = await product(tx);
+        for (const [fields, reason, kind] of cases) {
+          resetMocks();
+          destroyAsset.mockResolvedValue("not_found"); // a stub fetch: done, so the queue row is cleared
+          const r = response(fields);
+          expect(await addProductMedia(p.id, r), reason).toEqual({ ok: false, error: "limit", reason });
+          expect(destroyAsset.mock.calls, reason).toEqual([[r.public_id, kind]]);
+          expect(await tx.productMedia.count({ where: { productId: p.id } }), reason).toBe(0);
+          expect(updateTag).not.toHaveBeenCalled();
+        }
+        // A failed destroy leaves the queue row for the cron.
+        resetMocks();
+        destroyAsset.mockRejectedValue(new Error("Cloudinary destroy: HTTP 500"));
+        const log = vi.spyOn(console, "error").mockImplementation(() => {});
+        const r = response({ bytes: 10 * MiB + 1 });
+        try {
+          expect(await addProductMedia(p.id, r)).toEqual({ ok: false, error: "limit", reason: "size" });
+        } finally {
+          log.mockRestore();
+        }
+        expect(await tx.pendingDeletion.findUnique({ where: { publicId: r.public_id } })).toMatchObject({ attempts: 1, lastError: "Cloudinary destroy: HTTP 500" });
+      }),
+    );
+  });
+
+  it("K3: a forged signature → validation, nothing saved, queued or destroyed; so is a malformed body", async () => {
+    await inAction(() =>
+      rolledBack(async (tx) => {
+        resetMocks();
+        const p = await product(tx);
+        const r = response();
+        const forged = [
+          { ...r, signature: "0".repeat(40) },
+          { ...r, version: r.version + 1 }, // the signature no longer covers it
+          { ...r, public_id: `${r.public_id}x` },
+          { ...r, signature: signParams({ public_id: r.public_id, version: r.version }, "another-secret", "sha1") },
+        ];
+        for (const body of [...forged, null, "x", { ...r, bytes: "1000" }, { ...r, version: 1.5 }, { ...r, public_id: "" }]) {
+          expect(await addProductMedia(p.id, body), JSON.stringify(body)).toEqual({ ok: false, error: "validation" });
+        }
+        expect(await addProductMedia("abc", r)).toEqual({ ok: false, error: "validation" });
+        expect(destroyAsset).not.toHaveBeenCalled();
+        expect(await tx.productMedia.count({ where: { productId: p.id } })).toBe(0);
+        expect(await queued(tx, r.public_id)).toBe(0);
+        expect(updateTag).not.toHaveBeenCalled();
+      }),
+    );
+  });
+
+  it("K3: an unknown product → not_found and the asset goes through D4; a public_id already saved → validation, not destroyed", async () => {
+    await inAction(() =>
+      rolledBack(async (tx) => {
+        resetMocks();
+        const r = response();
+        expect(await addProductMedia(randomUUID(), r)).toEqual({ ok: false, error: "not_found" });
+        expect(destroyAsset.mock.calls).toEqual([[r.public_id, "IMAGE"]]);
+        expect(await queued(tx, r.public_id)).toBe(0); // destroyed, so its queue row is gone
+
+        resetMocks();
+        const p = await product(tx);
+        const saved = response();
+        expect(await addProductMedia(p.id, saved)).toMatchObject({ ok: true });
+        resetMocks();
+        expect(await addProductMedia(p.id, saved)).toEqual({ ok: false, error: "validation" });
+        expect(destroyAsset).not.toHaveBeenCalled();
+        expect(await tx.productMedia.count({ where: { publicId: saved.public_id } })).toBe(1);
+        expect(updateTag).not.toHaveBeenCalled();
+      }),
+    );
+  });
+
+  it("a database error after the verification → server, one log line with name and code, and the asset through D4", async () => {
+    const error = Object.assign(new Error("secret product data"), { name: "PrismaClientKnownRequestError", code: "P1001" });
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    await inAction(() =>
+      rolledBack(async (tx) => {
+        resetMocks();
+        const p = await product(tx);
+        state.tx = new Proxy(tx, {
+          get(target, prop) {
+            const value = Reflect.get(target, prop);
+            if (prop !== "productMedia") return typeof value === "function" ? value.bind(target) : value;
+            return new Proxy(value, { get: (delegate, method) => (method === "create" ? async () => Promise.reject(error) : Reflect.get(delegate, method)) });
+          },
+        });
+        const r = response();
+        try {
+          expect(await addProductMedia(p.id, r)).toEqual({ ok: false, error: "server" });
+          expect(log.mock.calls).toEqual([["[addProductMedia] failed", "PrismaClientKnownRequestError", "P1001"]]);
+        } finally {
+          state.tx = tx;
+          log.mockRestore();
+        }
+        expect(destroyAsset.mock.calls).toEqual([[r.public_id, "IMAGE"]]);
+        expect(updateTag).not.toHaveBeenCalled();
+      }),
+    );
+  });
+
+  it("setMainMedia, moveMedia, deleteMedia: D9 on a change; validation for a video, the main one, an end or a bad id; not_found", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx);
+      const main = await media(tx, p.id, "IMAGE");
+      await tx.productMedia.update({ where: { id: main.id }, data: { isMain: true } });
+      const video = await media(tx, p.id, "VIDEO");
+      const photo = await tx.productMedia.update({ where: { id: (await media(tx, p.id, "IMAGE")).id }, data: { sortOrder: 1 } });
+
+      resetMocks();
+      expect(await setMainMedia(p.id, video.id)).toEqual({ ok: false, error: "validation" });
+      expect(await moveMedia(p.id, main.id, "left")).toEqual({ ok: false, error: "validation" });
+      expect(await moveMedia(p.id, video.id, "left")).toEqual({ ok: false, error: "validation" });
+      expect(await moveMedia(p.id, video.id, "up" as "left")).toEqual({ ok: false, error: "validation" });
+      expect(await setMainMedia(p.id, "abc")).toEqual({ ok: false, error: "validation" });
+      expect(await deleteMedia("abc", video.id)).toEqual({ ok: false, error: "validation" });
+      expect(await setMainMedia(p.id, randomUUID())).toEqual({ ok: false, error: "not_found" });
+      expect(await moveMedia(randomUUID(), video.id, "right")).toEqual({ ok: false, error: "not_found" });
+      expect(await deleteMedia(p.id, randomUUID())).toEqual({ ok: false, error: "not_found" });
+      expect(await setMainMedia(p.id, main.id)).toEqual({ ok: true }); // already main: nothing to revalidate
+      expect(updateTag).not.toHaveBeenCalled();
+      expect(destroyAsset).not.toHaveBeenCalled();
+
+      expect(await moveMedia(p.id, video.id, "right")).toEqual({ ok: true });
+      expect(updateTag).toHaveBeenCalledWith("products");
+      expect(revalidatePath).toHaveBeenCalledWith("/admin", "layout");
+      expect((await listMedia(tx, p.id)).map((m) => m.id)).toEqual([main.id, photo.id, video.id]);
+
+      resetMocks();
+      expect(await setMainMedia(p.id, photo.id)).toEqual({ ok: true });
+      expect(updateTag).toHaveBeenCalledWith("products");
+      expect((await listMedia(tx, p.id)).filter((m) => m.isMain).map((m) => m.id)).toEqual([photo.id]);
+
+      resetMocks();
+      expect(await deleteMedia(p.id, photo.id)).toEqual({ ok: true });
+      expect(destroyAsset.mock.calls).toEqual([[photo.publicId, "IMAGE"]]);
+      expect(await tx.pendingDeletion.count({ where: { publicId: photo.publicId } })).toBe(0);
+      expect(updateTag).toHaveBeenCalledWith("products");
+      expect((await listMedia(tx, p.id)).map((m) => [m.id, m.isMain])).toEqual([
+        [main.id, true],
+        [video.id, false],
+      ]);
+      expect(requireAdmin).toHaveBeenCalled();
+    });
+  });
+
+  it("deleteMedia: a failed destroy keeps the queue row with attempts 1 and logs one line; the medium is gone", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await rolledBack(async (tx) => {
+        resetMocks();
+        destroyAsset.mockRejectedValue(new Error("Cloudinary destroy: network error"));
+        const p = await product(tx);
+        const video = await media(tx, p.id, "VIDEO");
+        expect(await deleteMedia(p.id, video.id)).toEqual({ ok: true });
+        expect(await tx.pendingDeletion.findUnique({ where: { publicId: video.publicId } })).toMatchObject({ kind: "VIDEO", attempts: 1, lastError: "Cloudinary destroy: network error" });
+        expect(await tx.productMedia.count({ where: { id: video.id } })).toBe(0);
+        expect(log.mock.calls).toEqual([["[deleteMedia] destroy failed, left in pending_deletions:", 1]]);
+      });
+    } finally {
+      log.mockRestore();
+    }
+  });
+});
+
+describe("committed fixture: the product lock under concurrent uploads (M3.4 K4, R8)", { timeout: 120_000 }, () => {
+  const committed: string[] = [];
+  const TX = { maxWait: 10_000, timeout: 60_000 };
+  afterAll(async () => {
+    // Its media rows cascade; they were never uploaded, so there is nothing to destroy.
+    await db.product.deleteMany({ where: { id: { in: committed } } });
+    expect(await db.product.count({ where: { id: { in: committed } } })).toBe(0);
+  });
+
+  it("barrier: B waits for A's product lock, so the product ends with one main image and distinct sortOrders", async () => {
+    const p = await db.product.create({ data: { name: `Test M3 ${randomBytes(4).toString("hex")}`, category: "Test", type: "READY_STOCK", isActive: false } });
+    committed.push(p.id);
+    const image = (): NewMedia => ({
+      publicId: `kagumi/dev/products/test-${randomUUID()}`,
+      kind: "IMAGE",
+      version: 1,
+      format: "jpg",
+      width: 10,
+      height: 10,
+      bytes: 1,
+      durationSec: null,
+    });
+    const signal = () => {
+      let open!: () => void;
+      const opened = new Promise<void>((resolve) => (open = resolve));
+      return { open, opened };
+    };
+    const aAdded = signal();
+    const release = signal();
+    let aPid = 0;
+    let bSettled = false;
+
+    const a = db.$transaction(async (tx) => {
+      aPid = (await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`)[0].pid;
+      const row = await addMediaRow(tx, p.id, image());
+      aAdded.open();
+      await release.opened;
+      return row;
+    }, TX);
+    await aAdded.opened;
+    const b = db.$transaction((tx) => addMediaRow(tx, p.id, image()), TX);
+    b.finally(() => (bSettled = true)).catch(() => {});
+
+    // The barrier: wait until Postgres reports a backend blocked by A (B, on the product row). No sleep.
+    await expect
+      .poll(
+        async () =>
+          Number((await db.$queryRaw<{ n: bigint }[]>`SELECT count(*) AS n FROM pg_stat_activity WHERE ${aPid}::int = ANY(pg_blocking_pids(pid))`)[0].n),
+        { timeout: 30_000 },
+      )
+      .toBe(1);
+    expect(bSettled).toBe(false);
+    release.open();
+    await expect(a).resolves.toMatchObject({ isMain: true, sortOrder: 0 });
+    await expect(b).resolves.toMatchObject({ isMain: false, sortOrder: 1 });
+    const rows = await db.productMedia.findMany({ where: { productId: p.id }, select: { isMain: true, sortOrder: true } });
+    expect(rows.filter((r) => r.isMain)).toHaveLength(1);
+    expect(new Set(rows.map((r) => r.sortOrder)).size).toBe(2);
   });
 });

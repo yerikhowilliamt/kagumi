@@ -186,10 +186,10 @@ Steps 1–4 run in one interactive transaction, in this order: validation (inval
 
 ### 4.5 Media (`lib/cloudinary.ts`)
 
-- **Upload:** the admin form asks a Server Action for a signature (`requireAdmin()` → `timestamp`, `folder`, `allowed_formats`, signed with `CLOUDINARY_API_SECRET` via `crypto` SHA-256). The browser uploads **directly** to Cloudinary, so large files never pass through Vercel functions (Hobby request-body limits).
+- **Upload:** media are added on the edit page of a saved product, one file at a time, and each file is saved by its own action right after its upload, so a cancelled form never leaves an uploaded asset behind. The browser first checks the file (`checkFile`: extension and MIME family, size, and for a video the duration read from its metadata; a refused file never leaves the browser, and a duration the browser can't read is left to the server). It then asks the `getUploadSignature` Server Action for a signature (`requireAdmin()` → `cloudName`, `apiKey`, `timestamp`, `folder`, `allowedFormats`; `allowed_formats`, `folder` and `timestamp` signed with `CLOUDINARY_API_SECRET` via `crypto` SHA-256; nothing is written) and uploads **directly** to `https://api.cloudinary.com/v1_1/<cloud>/<image|video>/upload` with `XMLHttpRequest` (for the progress bar), so large files never pass through Vercel functions (Hobby request-body limits). On success it sends Cloudinary's `public_id`, `version`, `signature`, `resource_type`, `format`, `bytes`, `width`, `height` and `duration` to `addProductMedia`, which answers `{ ok: true, media }`, `validation` (a response that doesn't verify, or a `public_id` already saved), `not_found`, `server`, or `limit` with the reason (`folder`, `format`, `size`, `duration`). The row is written in a transaction that locks the product row first, so several uploads to one product take the main photo and the next order one at a time. Main photo, order and removal are actions of their own (`setMainMedia`, `moveMedia`, `deleteMedia`): only an image can be main, the first image becomes main by itself, a deleted main photo passes the flag to the next image, and the order changes with move-left and move-right buttons.
 - **Folders:** one Cloudinary account. The production deployment (`VERCEL_ENV === "production"`) uploads to `kagumi/products`; local runs, tests and previews to `kagumi/dev/products`. The server accepts only a `public_id` under its own folder.
 - **Signing** (Cloudinary's authentication_signatures, read 2026-11-24): every signed parameter except `file`, `cloud_name`, `resource_type` and `api_key`, sorted by name, joined as `k=v&k=v`, the API secret appended with no separator, hashed to hex. Cloudinary accepts SHA-1 and SHA-256 without an account setting; requests use SHA-256. The upload response's `signature` covers `public_id` and `version` and is compared in constant time; its hash is taken from its length (40 hex SHA-1, the SDK default, 64 hex SHA-256). Destroy is `POST https://api.cloudinary.com/v1_1/<cloud>/<image|video>/destroy` with `public_id`, `timestamp`, `api_key` and `signature`; it answers `{"result":"ok"}`, and "not found" counts as done. The module is `lib/cloudinary.ts` (server only); delivery URLs and limits are in `lib/media.ts`, which imports nothing, so client code never loads the secret's module.
-- **Verification:** file size isn't a signable upload parameter, so the client checks size and duration before uploading, and the server checks again when the media row is saved. The server verifies Cloudinary's response signature (`public_id` + `version`), then checks `bytes`, `format` and `duration` against FR25 (image ≤ 10 MB, video ≤ 50 MB and ≤ 30 s). If a check fails, the server destroys the asset and rejects the save.
+- **Verification:** file size isn't a signable upload parameter, so the client checks size and duration before uploading, and the server checks again when the media row is saved. The server verifies Cloudinary's response signature (`public_id` + `version`; a response that doesn't verify is rejected and nothing is destroyed, since the asset isn't proven to be ours), then checks the folder, `format`, `bytes` and `duration` against FR25 (image ≤ 10 MB, video ≤ 50 MB and ≤ 30 s). If a check fails, or the save fails after the verification, the asset goes through the deletion queue below and the save is rejected.
 - **Delivery:** URLs use Cloudinary transformations: `f_auto,q_auto,c_fill,w_{size}` for images and `f_auto,q_auto,vc_auto` for video, with a poster from `so_0`. `next/image` uses a custom Cloudinary loader so Vercel's image optimizer (and its free-tier quota) isn't used.
 - **Deletion (through a queue):** one transaction locks the product row, inserts every affected `public_id` into `pending_deletions` and deletes the product or the medium. After the commit each asset is destroyed (signed in-house): on success its queue row is deleted; on failure its `attempts` goes up by one and `last_error` holds the HTTP status and Cloudinary's message (never the secret, the signature or the API key), the failure is logged, and the daily cron retries it. No asset is forgotten if the function stops between the two steps. Past orders keep their name and price snapshot (`order_items.product_id` becomes null).
 
@@ -283,21 +283,24 @@ sequenceDiagram
 
 ### 5.2 Admin edits a product with a new photo
 
+The product's information is saved first (a new product lands on its edit page); each medium is then saved on its own, right after its upload. A check that fails after the upload sends the asset through the deletion queue (4.5).
+
 ```mermaid
 sequenceDiagram
   participant A as Admin browser
   participant N as Next.js
   participant CL as Cloudinary
   participant D as Neon
+  A->>A: checkFile (format, size, duration)
   A->>N: getUploadSignature()  (requireAdmin)
-  N-->>A: signature, timestamp, folder
-  A->>CL: POST file (direct, signed)
-  CL-->>A: public_id, version, bytes, format, signature
-  A->>N: saveProduct(form, media[])  (requireAdmin)
-  N->>N: verify Cloudinary signature + limits
-  N->>D: upsert product + media
-  N->>N: revalidateTag('products')
-  N-->>A: saved
+  N-->>A: signature, timestamp, folder, allowedFormats, apiKey
+  A->>CL: POST file (direct, signed, XHR progress)
+  CL-->>A: public_id, version, bytes, format, duration, signature
+  A->>N: addProductMedia(productId, upload)  (requireAdmin)
+  N->>N: verify Cloudinary signature + folder + limits
+  N->>D: lock product row, insert product_media
+  N->>N: updateTag('products')
+  N-->>A: saved medium
   Note over A,D: Next storefront request regenerates the static page
 ```
 

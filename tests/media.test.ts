@@ -1,9 +1,10 @@
-// src/lib/media.ts (task M3.3 K3, K7): the browser's file check (FR25, System Design §9 upload limits), the delivery
-// URLs (System Design §4.5, M3 plan D17) and R2: the API secret's module never reaches client code.
+// src/lib/media.ts (task M3.3 K3, K7; M3.4 K2): the browser's file check (FR25, System Design §9 upload limits), the
+// picker filter and the refusal messages (M3 plan D16, D18), the delivery URLs (System Design §4.5, D17) and R2: the API
+// secret's module never reaches client code.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { checkFile, cloudinaryLoader, imageUrl, posterUrl, videoUrl } from "@/lib/media";
+import { ACCEPT, checkFile, cloudinaryLoader, formatDuration, IMAGE_FORMATS, imageUrl, posterUrl, refusalMessage, VIDEO_FORMATS, videoUrl } from "@/lib/media";
 
 const MiB = 1024 * 1024;
 afterEach(() => vi.unstubAllEnvs());
@@ -49,6 +50,27 @@ describe("checkFile (FR25)", () => {
     expect(checkFile({ name: "a.mp4", type: "video/mp4", size: 50 * MiB + 1 }, 1)).toEqual({ ok: false, reason: "size" });
     expect(checkFile({ name: "a.mp4", type: "video/mp4", size: 1 }, 30.01)).toEqual({ ok: false, reason: "duration" });
     expect(checkFile({ name: "a.mp4", type: "video/mp4", size: 1 }, null)).toEqual({ ok: true, kind: "VIDEO" });
+  });
+});
+
+describe("picker filter and refusal messages (M3.4, D16, D18)", () => {
+  it("the picker offers every allowed format, and .jpeg, and nothing else", () => {
+    const offered = ACCEPT.split(",");
+    expect(offered.sort()).toEqual([...IMAGE_FORMATS, ...VIDEO_FORMATS, "jpeg"].map((f) => `.${f}`).sort());
+  });
+
+  it("names each refusal with its D18 message, the size by kind", () => {
+    expect(refusalMessage("size", "IMAGE")).toBe("Foto lebih dari 10 MB.");
+    expect(refusalMessage("size", "VIDEO")).toBe("Video lebih dari 50 MB.");
+    expect(refusalMessage("duration", "VIDEO")).toBe("Video lebih dari 30 detik.");
+    expect(refusalMessage("format", null)).toBe("Format file tidak didukung.");
+    expect(refusalMessage("folder", "IMAGE")).toBe("Upload gagal. Coba lagi.");
+  });
+
+  it("writes a duration as m:ss, rounded to the second", () => {
+    expect(formatDuration(2)).toBe("0:02");
+    expect(formatDuration(29.6)).toBe("0:30");
+    expect(formatDuration(75.4)).toBe("1:15");
   });
 });
 

@@ -145,6 +145,25 @@ describe("admin gate (D4, D12)", () => {
       expect(called).toContain("createProduct");
       expect(called).toContain("updateProduct");
       expect(called).toContain("deleteProduct");
+      // M3.4: getUploadSignature is exit criterion 5.
+      for (const name of ["getUploadSignature", "addProductMedia", "setMainMedia", "moveMedia", "deleteMedia"]) expect(called).toContain(name);
+    });
+
+    // Exit criterion 5 (M3.4 K5): with the Cloudinary variables set, no session still gets no signature: the action
+    // redirects before it signs, and reads at most the session lookup.
+    it("getUploadSignature redirects to /admin/login without signing", async () => {
+      vi.stubEnv("NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME", "test-cloud");
+      vi.stubEnv("CLOUDINARY_API_KEY", "test-key");
+      vi.stubEnv("CLOUDINARY_API_SECRET", "test-secret-not-real");
+      const cloudinary = await import("@/lib/cloudinary");
+      const sign = vi.spyOn(cloudinary, "signParams");
+      const { getUploadSignature } = await import("@/app/admin/(protected)/produk/actions");
+      stubNoSession(mode);
+      let returned: unknown = "nothing";
+      await expect(redirectOf(async () => (returned = await getUploadSignature()))).resolves.toBe("/admin/login");
+      expect(returned).toBe("nothing");
+      expect(sign).not.toHaveBeenCalled();
+      expect(dbReads).toEqual(mode.reads);
     });
 
     // The default export and every function Next calls per request for the route (TR-M2.2-01).

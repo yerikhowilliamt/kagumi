@@ -148,3 +148,103 @@ export async function processDeletions(
   }
   return failed;
 }
+
+// Media (M3 plan D2, D4, D11). Each mutation runs in the caller's transaction and first locks the product row, so
+// several uploads to one product (a phone picker sends three files at once) read the main photo and the next
+// sortOrder one at a time.
+const MEDIA_FIELDS = {
+  id: true,
+  publicId: true,
+  kind: true,
+  version: true,
+  format: true,
+  width: true,
+  height: true,
+  bytes: true,
+  durationSec: true,
+  isMain: true,
+  sortOrder: true,
+} as const;
+
+/** A product's media in display order (D11): the main one first, then sortOrder, as the storefront shows them. */
+export async function listMedia(client: Client, productId: string) {
+  return client.productMedia.findMany({
+    where: { productId },
+    orderBy: [{ isMain: "desc" }, { sortOrder: "asc" }, { id: "asc" }],
+    select: MEDIA_FIELDS,
+  });
+}
+
+export type AdminMedia = Awaited<ReturnType<typeof listMedia>>[number];
+export type NewMedia = Omit<AdminMedia, "id" | "isMain" | "sortOrder">;
+
+const lockProduct = async (tx: Client, id: string) =>
+  (await tx.$queryRaw<{ id: string }[]>`SELECT id FROM products WHERE id = ${id}::uuid FOR UPDATE`).length > 0;
+
+/**
+ * D11 new medium: sortOrder = the product's maximum + 1; an image becomes main when the product has no main one (its
+ * first image). `not_found` when the product has no row, `duplicate` when the public_id is already saved (a replayed
+ * response: its asset is in use and must not be destroyed).
+ */
+export async function addMediaRow(tx: Client, productId: string, media: NewMedia): Promise<AdminMedia | "not_found" | "duplicate"> {
+  if (!(await lockProduct(tx, productId))) return "not_found";
+  if ((await tx.productMedia.count({ where: { publicId: media.publicId } })) > 0) return "duplicate";
+  const { _max } = await tx.productMedia.aggregate({ where: { productId }, _max: { sortOrder: true } });
+  const isMain = media.kind === "IMAGE" && (await tx.productMedia.count({ where: { productId, isMain: true } })) === 0;
+  return tx.productMedia.create({
+    data: { ...media, productId, isMain, sortOrder: _max.sortOrder === null ? 0 : _max.sortOrder + 1 },
+    select: MEDIA_FIELDS,
+  });
+}
+
+/** D11 "Jadikan utama": only an image; the old main is cleared first (the partial unique index allows one). */
+export async function setMainRow(tx: Client, productId: string, mediaId: string): Promise<"ok" | "unchanged" | "not_found" | "video"> {
+  if (!(await lockProduct(tx, productId))) return "not_found";
+  const media = await tx.productMedia.findFirst({ where: { id: mediaId, productId }, select: { kind: true, isMain: true } });
+  if (!media) return "not_found";
+  if (media.kind !== "IMAGE") return "video";
+  if (media.isMain) return "unchanged";
+  await tx.productMedia.updateMany({ where: { productId, isMain: true }, data: { isMain: false } });
+  await tx.productMedia.update({ where: { id: mediaId }, data: { isMain: true } });
+  return "ok";
+}
+
+/**
+ * D11 move: swaps the medium with its neighbour among the media after the main one, in display order. The others are
+ * numbered 0..n-1 in that order, so equal sortOrders can't make the swap a no-op. `invalid` for the main medium or a
+ * move past either end.
+ */
+export async function moveRow(tx: Client, productId: string, mediaId: string, direction: "left" | "right"): Promise<"ok" | "not_found" | "invalid"> {
+  if (!(await lockProduct(tx, productId))) return "not_found";
+  const all = await listMedia(tx, productId);
+  const media = all.find((m) => m.id === mediaId);
+  if (!media) return "not_found";
+  const others = all.filter((m) => !m.isMain);
+  const from = others.indexOf(media);
+  const to = from + (direction === "left" ? -1 : 1);
+  if (media.isMain || to < 0 || to >= others.length) return "invalid";
+  [others[from], others[to]] = [others[to], others[from]];
+  for (const [sortOrder, m] of others.entries()) {
+    if (m.sortOrder !== sortOrder) await tx.productMedia.update({ where: { id: m.id }, data: { sortOrder } });
+  }
+  return "ok";
+}
+
+/**
+ * D4 + D11 delete, inside the caller's transaction: queues the asset, deletes the row and, when it was the main one,
+ * makes the next image in display order main (none left: no main). Returns the queued asset, or null when the product
+ * or the medium (of that product) has no row.
+ */
+export async function deleteMediaRow(tx: Client, productId: string, mediaId: string): Promise<QueuedAsset | null> {
+  if (!(await lockProduct(tx, productId))) return null;
+  const media = await tx.productMedia.findFirst({ where: { id: mediaId, productId }, select: { publicId: true, kind: true, isMain: true } });
+  if (!media) return null;
+  const asset = { publicId: media.publicId, kind: media.kind };
+  await tx.pendingDeletion.createMany({ data: [asset], skipDuplicates: true });
+  await tx.productMedia.delete({ where: { id: mediaId } });
+  if (media.isMain) {
+    const next = await tx.productMedia.findFirst({ where: { productId, kind: "IMAGE" }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }], select: { id: true } });
+    if (next) await tx.productMedia.update({ where: { id: next.id }, data: { isMain: true } });
+  }
+  return asset;
+}
