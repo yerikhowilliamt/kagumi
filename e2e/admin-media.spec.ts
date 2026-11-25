@@ -108,8 +108,12 @@ test("K1: the photo and the clip upload with a visible percentage; the photo is 
   let release!: () => void;
   const released = new Promise<void>((resolve) => (release = resolve));
   const uploads: string[] = [];
+  const eager: (string | null)[] = []; // each upload's multipart `eager` field, null when absent (M3.6)
   await page.route("https://api.cloudinary.com/**", async (route) => {
     uploads.push(new URL(route.request().url()).pathname);
+    const body = route.request().postDataBuffer()?.toString("latin1") ?? "";
+    const field = (name: string) => body.match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)`))?.[1] ?? null;
+    eager.push(field("eager") && `${field("eager")} async=${field("eager_async")}`);
     if (uploads.length === 1) await released;
     await route.continue();
   });
@@ -130,6 +134,8 @@ test("K1: the photo and the clip upload with a visible percentage; the photo is 
   await expect(panel(page).getByRole("alert")).toHaveCount(0);
   const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
   expect(uploads).toEqual([`/v1_1/${cloud}/image/upload`, `/v1_1/${cloud}/video/upload`]);
+  // M3.6: only the clip asks for the eager H.264 and poster; Cloudinary accepted both signatures (the tiles saved).
+  expect(eager).toEqual([null, "f_mp4,vc_h264,q_auto,c_limit,h_1920,w_1920/mp4|so_0,q_auto,c_fill,w_960/jpg async=true"]);
 
   for (const step of ["after the uploads", "after a reload"]) {
     await expect(tiles(page), step).toHaveCount(2);
@@ -336,8 +342,9 @@ test("M3.5: the list thumb; the storefront card and the detail gallery through C
   await expect(picks.nth(1)).toHaveAttribute("aria-pressed", "true");
   await expect(picks.first()).toHaveAttribute("aria-pressed", "false");
   const video = dialog.locator("video");
-  await expect(video).toHaveAttribute("src", `https://res.cloudinary.com/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/video/upload/f_auto,q_auto,vc_auto/v${clip.version}/${clip.publicId}`);
-  await expect(video).toHaveAttribute("poster", new RegExp(`/video/upload/so_0,f_auto,q_auto,c_fill,w_\\d+/v${clip.version}/${escape(clip.publicId)}\\.jpg$`));
+  await expect(video).toHaveAttribute("src", `https://res.cloudinary.com/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,vc_h264,q_auto,c_limit,h_1920,w_1920/v${clip.version}/${clip.publicId}.mp4`);
+  // The main slot's poster is the one derived at upload (M3.6): width 960.
+  await expect(video).toHaveAttribute("poster", new RegExp(`/video/upload/so_0,q_auto,c_fill,w_960/v${clip.version}/${escape(clip.publicId)}\\.jpg$`));
   await expect(video).toHaveAttribute("preload", "none");
   await expect(video).toHaveAttribute("controls", "");
   await expect(video).not.toHaveAttribute("autoplay");

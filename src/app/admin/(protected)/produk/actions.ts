@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { checkUpload, credentials, destroyAsset, signParams, uploadFolder, verifyUploadResponse } from "@/lib/cloudinary";
 import { db } from "@/lib/db";
-import { IMAGE_FORMATS, VIDEO_FORMATS, type MediaRefusal } from "@/lib/media";
+import { IMAGE_FORMATS, VIDEO_EAGER, VIDEO_FORMATS, type MediaKind, type MediaRefusal } from "@/lib/media";
 import {
   addMediaRow,
   createProductRow,
@@ -147,11 +147,13 @@ const TX = { maxWait: 10_000 }; // opening a Neon connection can take longer tha
 const ALLOWED_FORMATS = [...IMAGE_FORMATS, ...VIDEO_FORMATS].join(",");
 
 /**
- * D16 step 2: the fields of one signed upload into this deployment's folder (D7). Nothing is written. The API key goes
- * to the browser because Cloudinary needs it in the request; the secret never leaves the server.
+ * D16 step 2: the fields of one signed upload into this deployment's folder (D7); for a video also `eager` (M3.6). A
+ * call with no kind (the M3.4 form) signs a photo's upload. Nothing is written. The API key goes to the browser because
+ * Cloudinary needs it in the request; the secret never leaves the server.
  */
-export async function getUploadSignature(): Promise<
-  { ok: true; cloudName: string; apiKey: string; timestamp: number; folder: string; allowedFormats: string; signature: string } | { ok: false; error: "server" }
+export async function getUploadSignature(kind: MediaKind = "IMAGE"): Promise<
+  | { ok: true; cloudName: string; apiKey: string; timestamp: number; folder: string; allowedFormats: string; eager?: string; signature: string }
+  | { ok: false; error: "server" }
 > {
   await requireAdmin();
   let keys;
@@ -163,8 +165,11 @@ export async function getUploadSignature(): Promise<
   }
   const timestamp = Math.floor(Date.now() / 1000);
   const folder = uploadFolder();
-  const signature = signParams({ allowed_formats: ALLOWED_FORMATS, folder, timestamp }, keys.apiSecret);
-  return { ok: true, cloudName: keys.cloudName, apiKey: keys.apiKey, timestamp, folder, allowedFormats: ALLOWED_FORMATS, signature };
+  const result = { ok: true as const, cloudName: keys.cloudName, apiKey: keys.apiKey, timestamp, folder, allowedFormats: ALLOWED_FORMATS };
+  if (kind !== "VIDEO") return { ...result, signature: signParams({ allowed_formats: ALLOWED_FORMATS, folder, timestamp }, keys.apiSecret) };
+  // M3.6: the H.264 MP4 and the poster are derived right after the upload, so the first play needn't wait for them.
+  const signature = signParams({ allowed_formats: ALLOWED_FORMATS, eager: VIDEO_EAGER, eager_async: "true", folder, timestamp }, keys.apiSecret);
+  return { ...result, eager: VIDEO_EAGER, signature };
 }
 
 const int4 = z.number().int().max(2_147_483_647);

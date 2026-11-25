@@ -1065,19 +1065,33 @@ describe("media actions (M3.4 K3, D4, D9, D16; exit criterion 2)", { timeout: 12
     );
   });
 
-  it("getUploadSignature signs exactly allowed_formats, folder and timestamp with the six formats, and returns no secret (BSA-M3.4-03)", async () => {
+  it("getUploadSignature for a photo signs exactly allowed_formats, folder and timestamp with the six formats, and returns no secret (BSA-M3.4-03)", async () => {
+    await inAction(async () => {
+      for (const result of [await getUploadSignature("IMAGE"), await getUploadSignature()]) {
+        if (!result.ok) throw new Error("no signature");
+        expect(Object.keys(result).sort()).toEqual(["allowedFormats", "apiKey", "cloudName", "folder", "ok", "signature", "timestamp"]);
+        expect(result).toMatchObject({ cloudName: "test-cloud", apiKey: "test-key", folder: "kagumi/dev/products" });
+        expect(result.allowedFormats.split(",").sort()).toEqual(["heic", "jpg", "mov", "mp4", "png", "webp"]);
+        expect(result.signature).toBe(signParams({ allowed_formats: result.allowedFormats, folder: result.folder, timestamp: result.timestamp }, SECRET));
+        expect(result.signature).toMatch(/^[0-9a-f]{64}$/); // SHA-256 (System Design §4.5)
+        expect(JSON.stringify(result)).not.toContain(SECRET);
+      }
+    });
+  });
+
+  it("getUploadSignature for a video also signs eager and eager_async=true (M3.6), behind requireAdmin, and returns no secret", async () => {
     await inAction(async () => {
       requireAdmin.mockClear();
       const before = Math.floor(Date.now() / 1000);
-      const result = await getUploadSignature();
+      const result = await getUploadSignature("VIDEO");
       if (!result.ok) throw new Error("no signature");
       expect(requireAdmin).toHaveBeenCalledTimes(1);
-      expect(Object.keys(result).sort()).toEqual(["allowedFormats", "apiKey", "cloudName", "folder", "ok", "signature", "timestamp"]);
-      expect(result).toMatchObject({ cloudName: "test-cloud", apiKey: "test-key", folder: "kagumi/dev/products" });
-      expect(result.allowedFormats.split(",").sort()).toEqual(["heic", "jpg", "mov", "mp4", "png", "webp"]);
+      expect(Object.keys(result).sort()).toEqual(["allowedFormats", "apiKey", "cloudName", "eager", "folder", "ok", "signature", "timestamp"]);
+      expect(result.eager).toBe("f_mp4,vc_h264,q_auto,c_limit,h_1920,w_1920/mp4|so_0,q_auto,c_fill,w_960/jpg");
       expect(result.timestamp).toBeGreaterThanOrEqual(before);
-      expect(result.signature).toBe(signParams({ allowed_formats: result.allowedFormats, folder: result.folder, timestamp: result.timestamp }, SECRET));
-      expect(result.signature).toMatch(/^[0-9a-f]{64}$/); // SHA-256 (System Design §4.5)
+      expect(result.signature).toBe(
+        signParams({ allowed_formats: result.allowedFormats, eager: result.eager!, eager_async: "true", folder: result.folder, timestamp: result.timestamp }, SECRET),
+      );
       expect(JSON.stringify(result)).not.toContain(SECRET);
     });
   });

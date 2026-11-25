@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useId, useState } from "react";
-import { posterUrl, videoUrl } from "@/lib/media";
+import { EAGER_POSTER_WIDTH, posterUrl, videoUrl } from "@/lib/media";
 import { MAX_QTY, formatDateShort, formatRupiah, isClosed } from "@/lib/order";
 import Button from "./Button";
 import Dialog from "./Dialog";
@@ -49,7 +49,7 @@ export default function ProductDetail() {
                 key={shown.publicId}
                 className={styles.video}
                 src={videoUrl(shown)}
-                poster={posterUrl(shown, 960)}
+                poster={posterUrl(shown, EAGER_POSTER_WIDTH)}
                 aria-label={product.name}
                 controls
                 playsInline

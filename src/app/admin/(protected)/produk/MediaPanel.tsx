@@ -75,6 +75,11 @@ function upload(file: File, kind: MediaKind, sig: Signature, onProgress: (percen
     body.append("timestamp", String(sig.timestamp));
     body.append("folder", sig.folder);
     body.append("allowed_formats", sig.allowedFormats);
+    // Signed together with the rest (M3.6); a video's only.
+    if (sig.eager) {
+      body.append("eager", sig.eager);
+      body.append("eager_async", "true");
+    }
     body.append("signature", sig.signature);
     xhr.send(body);
   });
@@ -98,7 +103,7 @@ export default function MediaPanel({ productId, media }: { productId: string; me
     running.current = true;
     for (let item = queue.current.shift(); item; item = queue.current.shift()) {
       const { key, file, kind } = item;
-      const sig = await call(getUploadSignature, { ok: false, error: "server" } as const);
+      const sig = await call(() => getUploadSignature(kind), { ok: false, error: "server" } as const);
       const uploaded = sig.ok ? await upload(file, kind, sig, (percent) => update(key, { percent })) : null;
       if (!uploaded) {
         update(key, { error: UPLOAD_FAILED });

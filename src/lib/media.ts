@@ -75,10 +75,21 @@ export function imageUrl(m: Media, width: number): string {
   return cloudinaryLoader({ src: `v${m.version}/${m.publicId}`, width });
 }
 
+// M3.6 (D17 revised): a video's H.264 MP4 and its 960 px poster are derived at upload (`VIDEO_EAGER`, signed by
+// getUploadSignature). Cloudinary serves an eager asset only when the delivery URL matches it exactly, extension
+// included, and f_auto/vc_auto would pick another format per browser; so both URLs are fixed and built from the same
+// strings as the eager list.
+const VIDEO_TRANSFORM = "f_mp4,vc_h264,q_auto,c_limit,h_1920,w_1920";
+const posterTransform = (width: number) => `so_0,q_auto,c_fill,w_${width}`;
+/** The detail's main slot poster; the only poster width derived at upload (thumbnails derive on first request). */
+export const EAGER_POSTER_WIDTH = 960;
+/** Cloudinary's `eager` upload parameter for a video: transformations joined by "|", each with its extension. */
+export const VIDEO_EAGER = `${VIDEO_TRANSFORM}/mp4|${posterTransform(EAGER_POSTER_WIDTH)}/jpg`;
+
 export function posterUrl(m: Media, width: number): string {
-  return `${base()}/video/upload/so_0,f_auto,q_auto,c_fill,w_${width}/v${m.version}/${m.publicId}.jpg`;
+  return `${base()}/video/upload/${posterTransform(width)}/v${m.version}/${m.publicId}.jpg`;
 }
 
 export function videoUrl(m: Media): string {
-  return `${base()}/video/upload/f_auto,q_auto,vc_auto/v${m.version}/${m.publicId}`;
+  return `${base()}/video/upload/${VIDEO_TRANSFORM}/v${m.version}/${m.publicId}.mp4`;
 }

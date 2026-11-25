@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ACCEPT, checkFile, cloudinaryLoader, formatDuration, IMAGE_FORMATS, imageUrl, posterUrl, refusalMessage, VIDEO_FORMATS, videoUrl } from "@/lib/media";
+import { ACCEPT, checkFile, cloudinaryLoader, EAGER_POSTER_WIDTH, formatDuration, IMAGE_FORMATS, imageUrl, posterUrl, refusalMessage, VIDEO_EAGER, VIDEO_FORMATS, videoUrl } from "@/lib/media";
 
 const MiB = 1024 * 1024;
 afterEach(() => vi.unstubAllEnvs());
@@ -81,8 +81,8 @@ describe("delivery URLs (D17)", () => {
     vi.stubEnv("NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME", "demo-cloud");
     const base = "https://res.cloudinary.com/demo-cloud";
     expect(imageUrl(m, 400)).toBe(`${base}/image/upload/f_auto,q_auto,c_fill,w_400/v1732400000/kagumi/dev/products/abc`);
-    expect(posterUrl(m, 640)).toBe(`${base}/video/upload/so_0,f_auto,q_auto,c_fill,w_640/v1732400000/kagumi/dev/products/abc.jpg`);
-    expect(videoUrl(m)).toBe(`${base}/video/upload/f_auto,q_auto,vc_auto/v1732400000/kagumi/dev/products/abc`);
+    expect(posterUrl(m, 640)).toBe(`${base}/video/upload/so_0,q_auto,c_fill,w_640/v1732400000/kagumi/dev/products/abc.jpg`);
+    expect(videoUrl(m)).toBe(`${base}/video/upload/f_mp4,vc_h264,q_auto,c_limit,h_1920,w_1920/v1732400000/kagumi/dev/products/abc.mp4`);
     expect(cloudinaryLoader({ src: "v1732400000/kagumi/dev/products/abc", width: 828 })).toBe(
       `${base}/image/upload/f_auto,q_auto,c_fill,w_828/v1732400000/kagumi/dev/products/abc`,
     );
@@ -94,6 +94,19 @@ describe("delivery URLs (D17)", () => {
     for (const width of [16, 48, 96, 384, 640, 1080, 3840]) {
       expect(cloudinaryLoader({ src, width }), String(width)).toBe(`https://res.cloudinary.com/demo-cloud/image/upload/f_auto,q_auto,c_fill,w_${width}/${src}`);
     }
+  });
+});
+
+describe("eager derivation at upload (M3.6, D16/D17 revised)", () => {
+  it("is the H.264 MP4 and the 960 px JPEG poster, in Cloudinary's eager syntax", () => {
+    expect(EAGER_POSTER_WIDTH).toBe(960);
+    expect(VIDEO_EAGER).toBe("f_mp4,vc_h264,q_auto,c_limit,h_1920,w_1920/mp4|so_0,q_auto,c_fill,w_960/jpg");
+  });
+
+  it("matches the delivery URLs exactly, transformation and extension (an eager asset is served only on an exact match)", () => {
+    const m = { publicId: "kagumi/dev/products/abc", version: 5 };
+    const shape = (url: string) => url.replace(/^.*\/video\/upload\/([^/]+)\/v5\/kagumi\/dev\/products\/abc\.(\w+)$/, "$1/$2");
+    expect(VIDEO_EAGER.split("|")).toEqual([shape(videoUrl(m)), shape(posterUrl(m, EAGER_POSTER_WIDTH))]);
   });
 });
 
