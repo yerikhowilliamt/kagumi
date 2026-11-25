@@ -167,15 +167,19 @@ describe("listProducts (K2, K3)", { timeout: 120_000 }, () => {
     });
   });
 
-  it("gives the row fields, the photo and video counts and the closed flag in WIB", async () => {
+  it("gives the row fields, the media in display order, the photo and video counts and the closed flag in WIB", async () => {
     await rolledBack(async (tx) => {
       const past = await product(tx, { deadline: YESTERDAY, type: "PRE_ORDER", price: 35000 });
       const today = await product(tx, { deadline: TODAY, type: "PRE_ORDER" });
       const none = await product(tx);
-      await media(tx, past.id, "IMAGE");
-      await media(tx, past.id, "IMAGE");
-      await media(tx, past.id, "VIDEO");
+      const first = await media(tx, past.id, "IMAGE");
+      const main = await media(tx, past.id, "IMAGE");
+      const clip = await media(tx, past.id, "VIDEO");
       await media(tx, today.id, "VIDEO");
+      // Display order (D11, M3.5 list thumb): the main one, then by sortOrder.
+      await tx.productMedia.update({ where: { id: first.id }, data: { sortOrder: 2 } });
+      await tx.productMedia.update({ where: { id: main.id }, data: { sortOrder: 5, isMain: true } });
+      await tx.productMedia.update({ where: { id: clip.id }, data: { sortOrder: 1 } });
 
       const rows = await listProducts(tx, null, TODAY);
       const row = (id: string) => rows.find((r) => r.id === id);
@@ -189,6 +193,7 @@ describe("listProducts (K2, K3)", { timeout: 120_000 }, () => {
         isActive: true,
         orderDeadline: YESTERDAY,
         closed: true,
+        media: [main, clip, first].map(({ kind, publicId, version }) => ({ kind, publicId, version })),
         photos: 2,
         videos: 1,
       });

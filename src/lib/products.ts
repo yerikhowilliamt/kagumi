@@ -35,7 +35,8 @@ export async function listProducts(client: Client, filter: ProductFilter, today:
       type: true,
       orderDeadline: true,
       isActive: true,
-      media: { select: { kind: true } },
+      // Display order (D11), so the list thumb is the main photo.
+      media: { select: { kind: true, publicId: true, version: true }, orderBy: [{ isMain: "desc" }, { sortOrder: "asc" }, { id: "asc" }] },
     },
   });
   return rows.map(({ media, orderDeadline, ...row }) => {
@@ -45,6 +46,7 @@ export async function listProducts(client: Client, filter: ProductFilter, today:
       ...row,
       orderDeadline: deadline,
       closed: isClosed(deadline, today),
+      media,
       photos: media.filter((m) => m.kind === "IMAGE").length,
       videos: media.filter((m) => m.kind === "VIDEO").length,
     };

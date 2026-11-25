@@ -13,6 +13,56 @@
   border-radius: 20px;
 }
 
+/* The letterbox around a video of another shape: fixed dark in both themes. */
+.video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--on-accent);
+}
+
+/* The thumbnail row: 4 columns, selected = 2px --ink border, a ▶ on video posters (design.md §6). */
+.row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pick {
+  position: relative;
+  display: grid;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  cursor: pointer;
+}
+
+.pick[aria-pressed="true"] {
+  border-color: var(--ink);
+}
+
+.poster {
+  object-fit: cover;
+}
+
+/* On a photo: colors whose values don't change with the theme (--on-accent, --on-blue). */
+.play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  color: var(--on-blue);
+  background: color-mix(in srgb, var(--on-accent) 35%, transparent);
+}
+
 .info {
   position: relative;
   display: flex;

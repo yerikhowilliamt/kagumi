@@ -1,5 +1,6 @@
-/* design.md §6 Product card: the placeholder */
+/* design.md §6 Product card: the photo, or the placeholder */
 .thumb {
+  position: relative;
   display: grid;
   place-items: center;
   width: 100%;
@@ -29,8 +30,18 @@
   transition: rotate 0.6s var(--ease);
 }
 
+/* next/image `fill` sets the position and the size. */
+.photo {
+  object-fit: cover;
+  transition: scale 0.6s var(--ease);
+}
+
 @media (hover: hover) {
   .thumb:hover .mark {
     rotate: 20deg;
+  }
+
+  .thumb:hover .photo {
+    scale: 1.05;
   }
 }

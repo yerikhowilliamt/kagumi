@@ -18,7 +18,7 @@ const CHIPS: { filter: ProductFilter; label: string }[] = [
   { filter: "PRE_ORDER", label: "Pre-order" },
   { filter: "HIDDEN", label: "Disembunyikan" },
 ];
-// The placeholder fills until M3.5 shows the photos; the storefront's four tones, by position.
+// The placeholder fill of a product without a photo; the storefront's four tones, by position.
 const TONES = ["butter", "pink", "sky", "mint"] as const;
 
 type Row = Awaited<ReturnType<typeof listProducts>>[number];
@@ -95,7 +95,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
                     <td>
                       <div className={styles.product}>
                         <span className={styles.thumb}>
-                          <ProductThumb product={{ tone: TONES[i % TONES.length] }} />
+                          <ProductThumb product={{ tone: TONES[i % TONES.length], media: p.media }} sizes="44px" />
                         </span>
                         <span>
                           <strong>{p.name}</strong>
@@ -139,7 +139,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
                 <Link className={list.card} href={edit(p.id)}>
                   <LinkPending />
                   <span className={styles.cardThumb}>
-                    <ProductThumb product={{ tone: TONES[i % TONES.length] }} />
+                    <ProductThumb product={{ tone: TONES[i % TONES.length], media: p.media }} sizes="56px" />
                   </span>
                   <span className={list.info}>
                     <strong>{p.name}</strong>

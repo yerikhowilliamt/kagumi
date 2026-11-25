@@ -2,7 +2,7 @@
 // Client components use this file: it imports only ./order, which imports nothing (D17).
 import { isClosed } from "./order";
 
-const TONES = ["butter", "pink", "sky", "mint"] as const;
+export type Tone = "butter" | "pink" | "sky" | "mint";
 
 export type StoreMedia = {
   publicId: string;
@@ -25,8 +25,8 @@ export type StoreProduct = {
   /** `YYYY-MM-DD`, comparable with `jakartaToday()`. */
   orderDeadline: string | null;
   /** Placeholder fill, by menu position. */
-  tone: (typeof TONES)[number];
-  /** The main one first, then by sortOrder. Empty until M3. */
+  tone: Tone;
+  /** The main one first, then by sortOrder. */
   media: StoreMedia[];
 };
 
@@ -36,6 +36,8 @@ type ProductRow = Omit<StoreProduct, "orderDeadline" | "tone" | "media"> & {
 };
 
 export function toStoreProduct(row: ProductRow, index: number): StoreProduct {
+  // Inside the mapper, so the storefront's cache key (the mapper's text) changes with the list (TD-004).
+  const TONES: Tone[] = ["butter", "pink", "sky", "mint"];
   return {
     id: row.id,
     name: row.name,

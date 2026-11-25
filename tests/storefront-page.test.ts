@@ -32,6 +32,7 @@ const cardNames = (html: string) => [...menuOf(html).matchAll(/<h3[^>]*>(?:<butt
 
 describe("storefront page", () => {
   beforeEach(() => findMany.mockReset().mockResolvedValue(ROWS));
+  afterEach(() => vi.unstubAllEnvs());
 
   it("reads only active products, in sortOrder, through the cache tagged products", async () => {
     await render();
@@ -52,11 +53,46 @@ describe("storefront page", () => {
     expect(cached[0].keys).toContain(toStoreProduct.toString());
   });
 
+  it("TD-004: the key holds the tone list in its order, so a change to the tones changes the key", () => {
+    const key = cached[0].keys.join("\n");
+    expect(key).toMatch(/["']butter["'],\s*["']pink["'],\s*["']sky["'],\s*["']mint["']/);
+    // The tones still follow the menu position.
+    const tones = [0, 1, 2, 3, 4].map((i) => toStoreProduct({ ...ROWS[0], media: [] } as never, i).tone);
+    expect(tones).toEqual(["butter", "pink", "sky", "mint", "butter"]);
+  });
+
   it("renders the marquee with each product name twice", async () => {
     const html = await render();
     expect(html).toContain('data-testid="marquee"');
     // The menu and the promo card name it too.
     expect(marqueeOf(html).match(/Hampers Natal/g)).toHaveLength(2);
+  });
+
+  it("M3.5, D17: a card shows its product's first image through Cloudinary with an empty alt; only a video keeps the placeholder", async () => {
+    vi.stubEnv("NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME", "demo-cloud");
+    const medium = (publicId: string, kind: string, isMain: boolean, sortOrder: number) => ({
+      publicId: `kagumi/dev/products/${publicId}`,
+      kind,
+      version: 5,
+      format: kind === "IMAGE" ? "jpg" : "mp4",
+      width: 10,
+      height: 10,
+      durationSec: kind === "IMAGE" ? null : 2,
+      isMain,
+      sortOrder,
+    });
+    findMany.mockResolvedValue([
+      { ...ROWS[0], media: [medium("klip", "VIDEO", false, 0), medium("foto", "IMAGE", true, 1)] },
+      { ...ROWS[1], media: [medium("hanya-video", "VIDEO", false, 0)] },
+    ]);
+    const cards = menuOf(await render()).split("<li").slice(1);
+    const card = (name: string) => cards.find((c) => c.includes(`>${name}<`)) ?? "";
+    const photo = card("Bolu Gulung").match(/<img[^>]*res\.cloudinary\.com[^>]*>/)?.[0] ?? "";
+    expect(photo).toMatch(/src="https:\/\/res\.cloudinary\.com\/demo-cloud\/image\/upload\/f_auto,q_auto,c_fill,w_\d+\/v5\/kagumi\/dev\/products\/foto"/);
+    expect(photo).toContain('alt=""');
+    expect(card("Hampers Natal")).toContain("Hampers Natal");
+    expect(card("Hampers Natal")).not.toContain("res.cloudinary.com");
+    expect(card("Hampers Natal")).toContain("%2Fimages%2Flogo.jpg"); // the placeholder's mark
   });
 
   it("hides the marquee with no active products and still renders the page", async () => {

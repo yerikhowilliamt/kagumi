@@ -87,6 +87,14 @@ describe("delivery URLs (D17)", () => {
       `${base}/image/upload/f_auto,q_auto,c_fill,w_828/v1732400000/kagumi/dev/products/abc`,
     );
   });
+
+  it("the loader puts each width next/image asks for into the URL, and keeps src as given (M3.5)", () => {
+    vi.stubEnv("NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME", "demo-cloud");
+    const src = "v7/kagumi/products/a-b";
+    for (const width of [16, 48, 96, 384, 640, 1080, 3840]) {
+      expect(cloudinaryLoader({ src, width }), String(width)).toBe(`https://res.cloudinary.com/demo-cloud/image/upload/f_auto,q_auto,c_fill,w_${width}/${src}`);
+    }
+  });
 });
 
 describe("R2: the secret's module stays on the server", () => {
