@@ -343,9 +343,12 @@ test("M3.5: the list thumb; the storefront card and the detail gallery through C
   await expect(video).not.toHaveAttribute("autoplay");
   expect(await video.evaluate((v: HTMLVideoElement) => v.paused)).toBe(true);
 
-  // Each opening starts at the first medium.
+  await expect(video).toHaveAccessibleName(productName);
+
+  // Closing removes the video, so a started one stops (TR-M3-01); each opening starts at the first medium.
   await shop.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
+  await expect(shop.locator("video")).toHaveCount(0);
   await openDetail();
   await expect(picks.first()).toHaveAttribute("aria-pressed", "true");
   await expect(dialog.locator("video")).toHaveCount(0);

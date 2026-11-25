@@ -43,7 +43,19 @@ export default function ProductDetail() {
       <div className={styles.gallery}>
         <div className={styles.main}>
           {shown?.kind === "VIDEO" ? (
-            <video key={shown.publicId} className={styles.video} src={videoUrl(shown)} poster={posterUrl(shown, 960)} controls playsInline preload="none" />
+            // Mounted only while open: closing removes it, which stops a started video (TR-M3-01).
+            detailOpen && (
+              <video
+                key={shown.publicId}
+                className={styles.video}
+                src={videoUrl(shown)}
+                poster={posterUrl(shown, 960)}
+                aria-label={product.name}
+                controls
+                playsInline
+                preload="none"
+              />
+            )
           ) : (
             <ProductThumb product={{ tone, media: shown ? [shown] : [] }} sizes={MAIN_SIZES} alt={product.name} />
           )}

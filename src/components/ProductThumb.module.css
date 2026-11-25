@@ -42,6 +42,6 @@
   }
 
   .thumb:hover .photo {
-    scale: 1.05;
+    scale: 1.04; /* design.md §4 Motion */
   }
 }
