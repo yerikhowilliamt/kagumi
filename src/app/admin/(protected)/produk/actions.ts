@@ -199,7 +199,8 @@ type MediaFail = Fail | { ok: false; error: "limit"; reason: MediaRefusal };
 /**
  * D16 step 5: the response's signature first (false: `validation`, and nothing is destroyed, since the asset isn't
  * proven ours), then the folder and the FR25 limits (refused: the asset through D4, `limit`), then the D11 row under
- * the product lock. Every failure after the verification sends the asset through D4, except a public_id already saved.
+ * the product lock. A public_id already saved is refused right after the verification and never destroyed; every
+ * other failure after the verification sends the asset through D4.
  */
 export async function addProductMedia(productId: string, upload: unknown): Promise<{ ok: true; media: AdminMedia } | MediaFail> {
   await requireAdmin();
@@ -214,6 +215,14 @@ export async function addProductMedia(productId: string, upload: unknown): Promi
     return { ok: false, error: "server" };
   }
   if (!verifyUploadResponse(u, secret)) return { ok: false, error: "validation" };
+  // A public_id already saved (a replayed response) is in use: refused before any check that would destroy it
+  // (BSA-M3.4-01). On a database error nothing is destroyed either, since the row may exist.
+  try {
+    if ((await db.productMedia.count({ where: { publicId: u.public_id } })) > 0) return { ok: false, error: "validation" };
+  } catch (error) {
+    logFailure("addProductMedia", error);
+    return { ok: false, error: "server" };
+  }
   const asset: QueuedAsset = { publicId: u.public_id, kind: u.resource_type === "video" ? "VIDEO" : "IMAGE" };
   const check = checkUpload(u, uploadFolder());
   if (!check.ok) {

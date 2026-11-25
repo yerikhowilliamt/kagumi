@@ -62,7 +62,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
 });
 
 const { db } = await import("@/lib/db");
-const { addProductMedia, createProduct, deleteMedia, deleteProduct, moveMedia, setMainMedia, setProductActive, updateProduct } = await import(
+const { addProductMedia, createProduct, deleteMedia, deleteProduct, getUploadSignature, moveMedia, setMainMedia, setProductActive, updateProduct } = await import(
   "@/app/admin/(protected)/produk/actions"
 );
 
@@ -850,6 +850,40 @@ describe("media rules (M3.4 K4, D11)", { timeout: 120_000 }, () => {
     });
   });
 
+  it("setMainRow after moves leaves no shared sortOrder: the order is total, as the storefront needs (BSA-M3.4-02)", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx);
+      const m = await added(tx, p.id, "IMAGE");
+      const a = await added(tx, p.id, "IMAGE");
+      const b = await added(tx, p.id, "IMAGE");
+      const c = await added(tx, p.id, "IMAGE");
+      expect(await moveRow(tx, p.id, c.id, "left")).toBe("ok"); // a 0, c 1, b 2; m (main) keeps 0
+      expect(await setMainRow(tx, p.id, b.id)).toBe("ok");
+      const rows = await listMedia(tx, p.id);
+      expect(rows.map((r) => r.id)).toEqual([b.id, m.id, a.id, c.id]);
+      expect(rows.filter((r) => !r.isMain).map((r) => r.sortOrder)).toEqual([0, 1, 2]);
+    });
+  });
+
+  it("deleting the main photo promotes the next image in display order after moves, not in creation order (BSA-M3.4-04)", async () => {
+    await rolledBack(async (tx) => {
+      const p = await product(tx);
+      const m = await added(tx, p.id, "IMAGE");
+      const v = await added(tx, p.id, "VIDEO");
+      const a = await added(tx, p.id, "IMAGE");
+      const b = await added(tx, p.id, "IMAGE");
+      await moveRow(tx, p.id, b.id, "left");
+      await moveRow(tx, p.id, b.id, "left"); // b, v, a
+      await moveRow(tx, p.id, v.id, "left"); // v, b, a
+      await deleteMediaRow(tx, p.id, m.id);
+      expect(await shown(tx, p.id)).toEqual([
+        { id: b.id, kind: "IMAGE", isMain: true },
+        { id: v.id, kind: "VIDEO", isMain: false },
+        { id: a.id, kind: "IMAGE", isMain: false },
+      ]);
+    });
+  });
+
   it("deleteMediaRow queues the asset; deleting the main photo makes the next image main; no image left → no main", async () => {
     await rolledBack(async (tx) => {
       const p = await product(tx);
@@ -1005,6 +1039,42 @@ describe("media actions (M3.4 K3, D4, D9, D16; exit criterion 2)", { timeout: 12
         expect(updateTag).not.toHaveBeenCalled();
       }),
     );
+  });
+
+  it("a saved public_id is never destroyed: sent to a missing product or out of rule, it gets validation (BSA-M3.4-01)", async () => {
+    await inAction(() =>
+      rolledBack(async (tx) => {
+        resetMocks();
+        const p = await product(tx);
+        const saved = response();
+        expect(await addProductMedia(p.id, saved)).toMatchObject({ ok: true });
+        resetMocks();
+        const tooBig = { ...saved, bytes: 10 * 1024 * 1024 + 1 };
+        tooBig.signature = signParams({ public_id: saved.public_id, version: saved.version }, SECRET, "sha1");
+        expect(await addProductMedia(randomUUID(), saved)).toEqual({ ok: false, error: "validation" });
+        expect(await addProductMedia(p.id, tooBig)).toEqual({ ok: false, error: "validation" });
+        expect(destroyAsset).not.toHaveBeenCalled();
+        expect(await queued(tx, saved.public_id)).toBe(0);
+        expect(await tx.productMedia.count({ where: { publicId: saved.public_id } })).toBe(1);
+      }),
+    );
+  });
+
+  it("getUploadSignature signs exactly allowed_formats, folder and timestamp with the six formats, and returns no secret (BSA-M3.4-03)", async () => {
+    await inAction(async () => {
+      requireAdmin.mockClear();
+      const before = Math.floor(Date.now() / 1000);
+      const result = await getUploadSignature();
+      if (!result.ok) throw new Error("no signature");
+      expect(requireAdmin).toHaveBeenCalledTimes(1);
+      expect(Object.keys(result).sort()).toEqual(["allowedFormats", "apiKey", "cloudName", "folder", "ok", "signature", "timestamp"]);
+      expect(result).toMatchObject({ cloudName: "test-cloud", apiKey: "test-key", folder: "kagumi/dev/products" });
+      expect(result.allowedFormats.split(",").sort()).toEqual(["heic", "jpg", "mov", "mp4", "png", "webp"]);
+      expect(result.timestamp).toBeGreaterThanOrEqual(before);
+      expect(result.signature).toBe(signParams({ allowed_formats: result.allowedFormats, folder: result.folder, timestamp: result.timestamp }, SECRET));
+      expect(result.signature).toMatch(/^[0-9a-f]{64}$/); // SHA-256 (System Design §4.5)
+      expect(JSON.stringify(result)).not.toContain(SECRET);
+    });
   });
 
   it("a database error after the verification → server, one log line with name and code, and the asset through D4", async () => {

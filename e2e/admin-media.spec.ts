@@ -19,7 +19,7 @@ assertDevelopmentDatabase();
 // After the guard: db.ts reads DATABASE_URL on load.
 const { db } = await import("../src/lib/db.ts");
 const { deleteProductRow, listMedia, processDeletions } = await import("../src/lib/products.ts");
-const { destroyAsset } = await import("../src/lib/cloudinary.ts");
+const { destroyAsset, signParams } = await import("../src/lib/cloudinary.ts");
 
 const runId = randomBytes(4).toString("hex");
 const PHOTO = "images/hampers-natal.jpg";
@@ -191,6 +191,33 @@ test("K2: an 11 MB photo, a 31-second video and a GIF are refused in the browser
   await fileInput(page).setInputFiles([{ name: "lagi.gif", mimeType: "image/gif", buffer: Buffer.from("GIF89a") }]);
   await expect(alerts).toHaveText(["Format file tidak didukung."]);
   expect(requests).toEqual([]);
+});
+
+test("a failed upload shows its message and the queue goes on; a server refusal shows on its tile (BSA-M3.4-05)", async ({ page }) => {
+  await open(page);
+  // The first upload fails at Cloudinary; the second gets a response signed as Cloudinary signs it (C4), for an asset
+  // that doesn't exist, 31 s long: the browser read 2 s, so only the server refuses it (D16 step 5), and its destroy
+  // answers "not found". Nothing reaches Cloudinary.
+  const secret = process.env.CLOUDINARY_API_SECRET;
+  if (!secret) throw new Error("CLOUDINARY_API_SECRET is not set");
+  const fake = { public_id: `kagumi/dev/products/e2e-${randomUUID()}`, version: 1, resource_type: "video", format: "mp4", bytes: 1000, width: 160, height: 200, duration: 31 };
+  const signed = { ...fake, signature: signParams({ public_id: fake.public_id, version: fake.version }, secret) };
+  seen.add(fake.public_id);
+  let calls = 0;
+  await page.route("https://api.cloudinary.com/**", (route) =>
+    ++calls === 1 ? route.abort() : route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(signed) }),
+  );
+  await fileInput(page).setInputFiles([
+    { name: "gagal.jpg", mimeType: "image/jpeg", buffer: readFileSync(PHOTO) },
+    { name: "panjang.mp4", mimeType: "video/mp4", buffer: readFileSync(CLIP) },
+  ]);
+  await expect(panel(page).getByRole("alert")).toHaveText(["Upload gagal. Coba lagi.", "Video lebih dari 30 detik."], { timeout: 20_000 });
+  await expect(panel(page).getByRole("progressbar")).toHaveCount(0);
+  expect(calls).toBe(2);
+  await expect(panel(page).getByText("2 file")).toBeVisible();
+  expect(await saved()).toHaveLength(2);
+  expect(await db.productMedia.count({ where: { publicId: fake.public_id } })).toBe(0);
+  await expect.poll(() => db.pendingDeletion.count({ where: { publicId: fake.public_id } })).toBe(0);
 });
 
 test("K6: the drop zone opens the file picker with Enter and with Space", async ({ page }) => {

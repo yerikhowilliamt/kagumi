@@ -178,6 +178,13 @@ export async function listMedia(client: Client, productId: string) {
 export type AdminMedia = Awaited<ReturnType<typeof listMedia>>[number];
 export type NewMedia = Omit<AdminMedia, "id" | "isMain" | "sortOrder">;
 
+/** Numbers the media after the main one 0..n-1 in the given order, so no sortOrder is shared (D11, BSA-M3.4-02). */
+async function renumber(tx: Client, others: { id: string; sortOrder: number }[]) {
+  for (const [sortOrder, m] of others.entries()) {
+    if (m.sortOrder !== sortOrder) await tx.productMedia.update({ where: { id: m.id }, data: { sortOrder } });
+  }
+}
+
 const lockProduct = async (tx: Client, id: string) =>
   (await tx.$queryRaw<{ id: string }[]>`SELECT id FROM products WHERE id = ${id}::uuid FOR UPDATE`).length > 0;
 
@@ -197,7 +204,10 @@ export async function addMediaRow(tx: Client, productId: string, media: NewMedia
   });
 }
 
-/** D11 "Jadikan utama": only an image; the old main is cleared first (the partial unique index allows one). */
+/**
+ * D11 "Jadikan utama": only an image; the old main is cleared first (the partial unique index allows one), then the
+ * others are renumbered in display order, so the old main can't share a sortOrder with another medium.
+ */
 export async function setMainRow(tx: Client, productId: string, mediaId: string): Promise<"ok" | "unchanged" | "not_found" | "video"> {
   if (!(await lockProduct(tx, productId))) return "not_found";
   const media = await tx.productMedia.findFirst({ where: { id: mediaId, productId }, select: { kind: true, isMain: true } });
@@ -206,6 +216,7 @@ export async function setMainRow(tx: Client, productId: string, mediaId: string)
   if (media.isMain) return "unchanged";
   await tx.productMedia.updateMany({ where: { productId, isMain: true }, data: { isMain: false } });
   await tx.productMedia.update({ where: { id: mediaId }, data: { isMain: true } });
+  await renumber(tx, (await listMedia(tx, productId)).filter((m) => !m.isMain));
   return "ok";
 }
 
@@ -224,9 +235,7 @@ export async function moveRow(tx: Client, productId: string, mediaId: string, di
   const to = from + (direction === "left" ? -1 : 1);
   if (media.isMain || to < 0 || to >= others.length) return "invalid";
   [others[from], others[to]] = [others[to], others[from]];
-  for (const [sortOrder, m] of others.entries()) {
-    if (m.sortOrder !== sortOrder) await tx.productMedia.update({ where: { id: m.id }, data: { sortOrder } });
-  }
+  await renumber(tx, others);
   return "ok";
 }
 
