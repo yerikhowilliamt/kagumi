@@ -90,7 +90,7 @@ export default function MediaPanel({ productId, media }: { productId: string; me
   const grid = useRef<HTMLUListElement>(null);
   const drop = useRef<HTMLDivElement>(null);
   // The button whose action is running; focus returns to it once the grid has refreshed (TR-M3-10).
-  const refocus = useRef<{ id: string; label: string } | null>(null);
+  const refocus = useRef<{ id: string; label: string; from: Element | null } | null>(null);
   const queue = useRef<{ key: number; file: File; kind: MediaKind }[]>([]);
   const running = useRef(false);
   const nextKey = useRef(0);
@@ -146,7 +146,7 @@ export default function MediaPanel({ productId, media }: { productId: string; me
   // A delete waits for Cloudinary's destroy (D4), which can take seconds: the tile shows it is busy meanwhile.
   async function act(mediaId: string, label: string, action: () => Promise<{ ok: boolean }>) {
     if (busy) return;
-    refocus.current = { id: mediaId, label };
+    refocus.current = { id: mediaId, label, from: document.activeElement };
     setBusy(mediaId);
     const result = await call(action, { ok: false });
     setBusy(null);
@@ -155,11 +155,15 @@ export default function MediaPanel({ productId, media }: { productId: string; me
   }
 
   // After an action the grid re-renders, and the used button may be gone or moved (which drops focus): focus goes to the
-  // same button of the same medium, else that medium's remove button, else (it was deleted) the drop zone.
+  // same button of the same medium, else that medium's remove button, else (it was deleted) the drop zone. Only when
+  // focus was lost or is still on the used button: an owner who moved on during the wait keeps their place
+  // (TR-M3F-01). Next dispatches Server Actions one at a time, so the refresh that lands here is the action's own.
   useEffect(() => {
     const target = refocus.current;
     if (!target) return;
     refocus.current = null;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected && active !== target.from) return;
     const tile = grid.current?.querySelector(`li[data-id="${target.id}"]`);
     const button = tile?.querySelector<HTMLElement>(`button[aria-label="${target.label}"]`) ?? tile?.querySelector<HTMLElement>('button[aria-label^="Hapus"]');
     (button ?? drop.current)?.focus();

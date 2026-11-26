@@ -237,6 +237,70 @@ test("main, move and delete (D3, D11); every tile button is reached by Tab with 
   await expect(panel(page).locator('[aria-disabled="true"]')).toHaveCount(0);
 });
 
+test("TR-M3F-01: focus moved during an action stays put; a form save waits for the action, and the restore still lands", async ({ page }) => {
+  // Two more media, images never uploaded (their destroy answers "not found"), deleted one per case.
+  const fakes = [];
+  for (const sortOrder of [100, 101]) {
+    const fake = await db.productMedia.create({
+      data: { productId, publicId: `kagumi/dev/products/e2e-${randomUUID()}`, kind: "IMAGE", version: 1, format: "jpg", width: 10, height: 10, bytes: 1, sortOrder },
+    });
+    seen.add(fake.publicId);
+    fakes.push(fake);
+  }
+  await open(page);
+  const count = await tiles(page).count();
+  const tileOf = (id: string) => panel(page).locator(`li[data-id="${id}"]`);
+
+  /** Holds the next action POST (only that one) until the returned function is called. */
+  async function holdNext() {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let first = true;
+    await page.route(`**/admin/produk/${productId}`, async (route) => {
+      if (route.request().method() === "POST" && first) {
+        first = false;
+        await released;
+      }
+      await route.continue();
+    });
+    return release;
+  }
+  const unhold = () => page.unroute(`**/admin/produk/${productId}`);
+
+  // (b) A form save started while the delete waits (focus stays on the used button). Next dispatches Server Actions
+  // one at a time, so no other refresh lands during an action: the save waits, the delete's refresh restores focus
+  // to the drop zone, and the save's later refresh leaves it there.
+  const savedLine = page.getByRole("status").filter({ hasText: "Tersimpan." });
+  let posts = 0;
+  page.on("request", (request) => request.method() === "POST" && request.url().endsWith(`/admin/produk/${productId}`) && posts++);
+  let release = await holdNext();
+  await tileOf(fakes[0].id).getByRole("button", { name: "Hapus foto" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(tileOf(fakes[0].id)).toHaveAttribute("aria-busy", "true");
+  await page.getByRole("button", { name: "Simpan perubahan" }).evaluate((button) => button.closest("form")!.requestSubmit());
+  await expect(page.getByRole("button", { name: "Menyimpan…" })).toBeVisible(); // the save has started
+  expect(posts).toBe(1); // only the held delete has left the browser
+  await expect(savedLine).toHaveCount(0);
+  release();
+  await expect(tiles(page)).toHaveCount(count - 1, { timeout: 20_000 });
+  await expect(savedLine).toBeVisible();
+  await expect(dropZone(page)).toBeFocused();
+  await unhold();
+
+  // (a) The owner moves focus to a field while the delete waits: it stays there.
+  release = await holdNext();
+  await tileOf(fakes[1].id).getByRole("button", { name: "Hapus foto" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(tileOf(fakes[1].id)).toHaveAttribute("aria-busy", "true");
+  const name = page.getByLabel("Nama produk", { exact: true });
+  await name.focus();
+  release();
+  await expect(tiles(page)).toHaveCount(count - 2, { timeout: 20_000 });
+  await expect(name).toBeFocused();
+  await unhold();
+  expect(await db.productMedia.count({ where: { id: { in: fakes.map((f) => f.id) } } })).toBe(0);
+});
+
 test("K2: an 11 MB photo, a 31-second video and a GIF are refused in the browser; nothing reaches Cloudinary", async ({ page }) => {
   await open(page);
   const requests: string[] = [];

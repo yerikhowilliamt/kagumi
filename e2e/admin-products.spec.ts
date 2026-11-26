@@ -165,7 +165,9 @@ test.describe("desktop list and switch", () => {
     await page.keyboard.press("Space");
     await expect(control).toHaveAttribute("aria-busy", "true");
     await expect(other).toHaveCSS("opacity", "0.55");
-    await expect(other).toHaveCSS("cursor", "progress");
+    // Its controls show the wait too (TR-M3F-02).
+    await expect(switchOf(page, closed.name)).toHaveCSS("cursor", "progress");
+    await expect(other.getByRole("link", { name: `Edit ${closed.name}` })).toHaveCSS("cursor", "progress");
     await expect(row(page, listed.name)).toHaveCSS("opacity", "1");
     release();
     await expect(control).toHaveAttribute("aria-checked", "true");

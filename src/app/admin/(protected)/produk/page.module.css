@@ -144,6 +144,11 @@
   cursor: progress;
 }
 
+/* Their switch and edit link too, which set their own cursor (TR-M3F-02). */
+.table tbody:has([aria-busy="true"]) tr:not(:has([aria-busy="true"])) :is([role="switch"], a) {
+  cursor: progress;
+}
+
 .switchCell {
   display: grid;
   justify-items: start;
