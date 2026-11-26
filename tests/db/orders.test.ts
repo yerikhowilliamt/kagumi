@@ -123,26 +123,28 @@ const RUN = `M24-${Date.now().toString(36)}`;
 const NAME = `Test M2.4 ${RUN}`;
 
 type Line = { unitPrice: number | null; quantity: number };
-const listed = (
-  tx: Tx,
-  data: {
-    id?: number;
-    name?: string;
-    status?: "NEW" | "CONFIRMED" | "COMPLETED" | "CANCELLED";
-    createdAt?: Date;
-    lines?: Line[];
-  },
-) =>
+type Fixture = {
+  id?: number;
+  name?: string;
+  status?: "NEW" | "CONFIRMED" | "COMPLETED" | "CANCELLED";
+  createdAt?: Date;
+  lines?: Line[];
+};
+/** The order's own columns; `listed` adds its items. */
+const orderRow = (data: Fixture) => ({
+  id: data.id ?? nextOrderId--,
+  customerName: data.name ?? NAME,
+  customerPhone: "6280000000000",
+  fulfillment: "DELIVERY" as const,
+  address: "Jalan Test",
+  requestedDate: new Date("2026-12-20T00:00:00Z"),
+  status: data.status ?? ("NEW" as const),
+  createdAt: data.createdAt ?? new Date("2099-01-01T00:00:00Z"),
+});
+const listed = (tx: Tx, data: Fixture) =>
   tx.order.create({
     data: {
-      id: data.id ?? nextOrderId--,
-      customerName: data.name ?? NAME,
-      customerPhone: "6280000000000",
-      fulfillment: "DELIVERY",
-      address: "Jalan Test",
-      requestedDate: new Date("2026-12-20T00:00:00Z"),
-      status: data.status ?? "NEW",
-      createdAt: data.createdAt ?? new Date("2099-01-01T00:00:00Z"),
+      ...orderRow(data),
       items: {
         create: (data.lines ?? [{ unitPrice: 10_000, quantity: 1 }]).map((line, i) => ({
           productName: `Test M2.4 item ${i}`,
@@ -158,12 +160,11 @@ const all = { status: null, q: "", page: 1 } as const;
 describe("listOrders (M2.4, D5, D16)", { timeout: 120_000 }, () => {
   it("newest first by created_at, then id; 50 per page; page 2 holds the 51st; past the last is the last (K2)", async () => {
     await rolledBack(async (tx) => {
-      const made: { id: number; createdAt: Date }[] = [];
-      for (let i = 0; i < 51; i++) {
-        // Pairs share a created_at, so the id tie-break decides their order.
-        const o = await listed(tx, { createdAt: new Date(Date.UTC(2099, 0, 1, 0, Math.floor(i / 2))) });
-        made.push({ id: o.id, createdAt: o.createdAt });
-      }
+      // Pairs share a created_at, so the id tie-break decides their order.
+      const made = Array.from({ length: 51 }, (_, i) => orderRow({ createdAt: new Date(Date.UTC(2099, 0, 1, 0, Math.floor(i / 2))) }));
+      // Two statements, not 51 nested creates: over a slow link those passed the 30 s transaction timeout (ERR-005).
+      await tx.order.createMany({ data: made });
+      await tx.orderItem.createMany({ data: made.map((o) => ({ orderId: o.id, productName: "Test M2.4 item 0", unitPrice: 10_000, quantity: 1 })) });
       const expected = [...made]
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id)
         .map((o) => o.id);

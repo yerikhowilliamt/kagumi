@@ -61,18 +61,17 @@ describe("the order list page's pagination (BSA-M2.4-03)", { timeout: 120_000 },
   it("'Berikutnya →' on page 1 and '← Sebelumnya' on page 2 keep status and q; one page shows neither", async () => {
     const tag = `Test M2.5 pages ${Date.now().toString(36)}`;
     await rolledBack(async (tx) => {
-      for (let i = 0; i < 51; i++) {
-        await tx.order.create({
-          data: {
-            id: -1_500_000_000 - i,
-            customerName: tag,
-            customerPhone: "6280000000000",
-            fulfillment: "PICKUP",
-            requestedDate: new Date("2026-11-25T00:00:00Z"),
-            status: "CONFIRMED",
-          },
-        });
-      }
+      // One statement, not 51: over a slow link those can pass the transaction timeout (ERR-005).
+      await tx.order.createMany({
+        data: Array.from({ length: 51 }, (_, i) => ({
+          id: -1_500_000_000 - i,
+          customerName: tag,
+          customerPhone: "6280000000000",
+          fulfillment: "PICKUP" as const,
+          requestedDate: new Date("2026-11-25T00:00:00Z"),
+          status: "CONFIRMED" as const,
+        })),
+      });
       const q = encodeURIComponent(tag).replace(/%20/g, "+");
 
       const first = await OrdersPage({ searchParams: Promise.resolve({ status: "CONFIRMED", q: tag }) } as never);
