@@ -355,10 +355,13 @@ test("a failed upload shows its message and the queue goes on; a server refusal 
 test("K6: the drop zone opens the file picker with Enter and with Space", async ({ page }) => {
   await open(page);
   for (const key of ["Enter", "Space"]) {
-    await dropZone(page).focus();
-    const chooser = page.waitForEvent("filechooser");
-    await page.keyboard.press(key);
-    expect((await chooser).isMultiple(), key).toBe(true);
+    // A key pressed before hydration does nothing (ERR-006), so it is pressed again until the picker opens.
+    await expect(async () => {
+      await dropZone(page).focus();
+      const chooser = page.waitForEvent("filechooser", { timeout: 1_000 });
+      await page.keyboard.press(key);
+      expect((await chooser).isMultiple(), key).toBe(true);
+    }).toPass();
   }
 });
 
