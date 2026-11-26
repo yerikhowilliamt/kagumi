@@ -334,6 +334,14 @@ test("M3.5: the list thumb; the storefront card and the detail gallery through C
   await expect(picks.first()).toHaveCSS("border-top-color", ink);
   await expect(picks.first()).toHaveCSS("border-top-width", "2px");
 
+  // The clip is 4:5 like the slot; its main poster is replaced by a portrait 9:16 one, the shape of a phone video, which
+  // made the video taller than the slot and clipped its controls on desktop (M3.6 S8).
+  const mainPoster = `**/video/upload/so_0,q_auto,c_fill,w_960/v${clip.version}/${clip.publicId}.jpg`;
+  await shop.route(mainPoster, (route) =>
+    route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="90" height="160"><rect width="90" height="160"/></svg>' }),
+  );
+  const posterServed = shop.waitForResponse((r) => r.url().includes("/so_0,q_auto,c_fill,w_960/"));
+
   // Tab reaches the video's thumbnail; Enter selects it: the video, never autoplaying or preloading (K3).
   await picks.first().focus();
   await shop.keyboard.press("Tab");
@@ -345,6 +353,12 @@ test("M3.5: the list thumb; the storefront card and the detail gallery through C
   await expect(video).toHaveAttribute("src", `https://res.cloudinary.com/${process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME}/video/upload/f_mp4,vc_h264,q_auto,c_limit,h_1920,w_1920/v${clip.version}/${clip.publicId}.mp4`);
   // The main slot's poster is the one derived at upload (M3.6): width 960.
   await expect(video).toHaveAttribute("poster", new RegExp(`/video/upload/so_0,q_auto,c_fill,w_960/v${clip.version}/${escape(clip.publicId)}\\.jpg$`));
+  // The video fits the 4:5 slot, so its control bar (play) stays inside the clipped box.
+  await posterServed;
+  await expect(video).toHaveCSS("min-height", "0px");
+  await expect
+    .poll(() => video.evaluate((v) => Math.round(v.getBoundingClientRect().height - v.parentElement!.getBoundingClientRect().height)))
+    .toBeLessThanOrEqual(0);
   await expect(video).toHaveAttribute("preload", "none");
   await expect(video).toHaveAttribute("controls", "");
   await expect(video).not.toHaveAttribute("autoplay");

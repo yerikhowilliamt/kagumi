@@ -17,6 +17,8 @@
 .video {
   width: 100%;
   height: 100%;
+  /* A grid item's auto min-height follows a portrait poster, overflowing the 4:5 slot and clipping the controls. */
+  min-height: 0;
   object-fit: contain;
   background: var(--on-accent);
 }
