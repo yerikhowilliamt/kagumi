@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { unstable_rethrow } from "next/navigation";
-import { startTransition, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { startTransition, useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { ACCEPT, checkFile, cloudinaryLoader, formatDuration, posterUrl, refusalMessage, type CloudinaryUpload, type MediaKind } from "@/lib/media";
 import type { AdminMedia } from "@/lib/products";
 import detail from "../pesanan/[id]/page.module.css";
@@ -87,6 +87,10 @@ function upload(file: File, kind: MediaKind, sig: Signature, onProgress: (percen
 
 export default function MediaPanel({ productId, media }: { productId: string; media: AdminMedia[] }) {
   const input = useRef<HTMLInputElement>(null);
+  const grid = useRef<HTMLUListElement>(null);
+  const drop = useRef<HTMLDivElement>(null);
+  // The button whose action is running; focus returns to it once the grid has refreshed (TR-M3-10).
+  const refocus = useRef<{ id: string; label: string } | null>(null);
   const queue = useRef<{ key: number; file: File; kind: MediaKind }[]>([]);
   const running = useRef(false);
   const nextKey = useRef(0);
@@ -140,13 +144,26 @@ export default function MediaPanel({ productId, media }: { productId: string; me
   }
 
   // A delete waits for Cloudinary's destroy (D4), which can take seconds: the tile shows it is busy meanwhile.
-  async function act(mediaId: string, action: () => Promise<{ ok: boolean }>) {
+  async function act(mediaId: string, label: string, action: () => Promise<{ ok: boolean }>) {
     if (busy) return;
+    refocus.current = { id: mediaId, label };
     setBusy(mediaId);
     const result = await call(action, { ok: false });
     setBusy(null);
+    if (!result.ok) refocus.current = null; // nothing moved: focus is still on the button
     setFailed((n) => (result.ok ? 0 : n + 1));
   }
+
+  // After an action the grid re-renders, and the used button may be gone or moved (which drops focus): focus goes to the
+  // same button of the same medium, else that medium's remove button, else (it was deleted) the drop zone.
+  useEffect(() => {
+    const target = refocus.current;
+    if (!target) return;
+    refocus.current = null;
+    const tile = grid.current?.querySelector(`li[data-id="${target.id}"]`);
+    const button = tile?.querySelector<HTMLElement>(`button[aria-label="${target.label}"]`) ?? tile?.querySelector<HTMLElement>('button[aria-label^="Hapus"]');
+    (button ?? drop.current)?.focus();
+  }, [media]);
 
   const openPicker = () => input.current?.click();
   const onKey = (event: KeyboardEvent) => {
@@ -166,7 +183,7 @@ export default function MediaPanel({ productId, media }: { productId: string; me
         <h2 id="media">Foto & video</h2>
         <span>{media.length} file</span>
       </div>
-      <div className={styles.drop} role="button" tabIndex={0} onClick={openPicker} onKeyDown={onKey} onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+      <div ref={drop} className={styles.drop} role="button" tabIndex={0} onClick={openPicker} onKeyDown={onKey} onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
         <span className={styles.icon} aria-hidden="true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
@@ -178,10 +195,11 @@ export default function MediaPanel({ productId, media }: { productId: string; me
       <input ref={input} type="file" accept={ACCEPT} multiple hidden onChange={(event) => void pick(event.currentTarget.files)} />
 
       {(media.length > 0 || jobs.length > 0) && (
-        <ul className={styles.grid}>
+        <ul ref={grid} className={styles.grid}>
           {media.map((m) => {
             const at = others.indexOf(m);
             const label = m.kind === "IMAGE" ? "Hapus foto" : "Hapus video";
+            const off = (busy !== null && busy !== m.id) || undefined; // another medium's action is running (TR-M3-05)
             const picture =
               m.kind === "IMAGE" ? (
                 <Image loader={cloudinaryLoader} src={`v${m.version}/${m.publicId}`} alt="" fill sizes="(max-width: 760px) 30vw, 160px" />
@@ -189,9 +207,15 @@ export default function MediaPanel({ productId, media }: { productId: string; me
                 <Image loader={({ width }) => posterUrl(m, width)} src={m.publicId} alt="" fill sizes="(max-width: 760px) 30vw, 160px" />
               );
             return (
-              <li key={m.id} className={styles.tile} aria-busy={busy === m.id || undefined}>
+              <li key={m.id} data-id={m.id} className={styles.tile} aria-busy={busy === m.id || undefined}>
                 {m.kind === "IMAGE" && !m.isMain ? (
-                  <button type="button" className={styles.pick} aria-label="Jadikan utama" onClick={() => act(m.id, () => setMainMedia(productId, m.id))}>
+                  <button
+                    type="button"
+                    className={styles.pick}
+                    aria-label="Jadikan utama"
+                    aria-disabled={off}
+                    onClick={() => act(m.id, "Jadikan utama", () => setMainMedia(productId, m.id))}
+                  >
                     {picture}
                   </button>
                 ) : (
@@ -206,16 +230,28 @@ export default function MediaPanel({ productId, media }: { productId: string; me
                     <span className={styles.duration}>{formatDuration(m.durationSec ?? 0)}</span>
                   </>
                 )}
-                <button type="button" className={styles.remove} aria-label={label} onClick={() => act(m.id, () => deleteMedia(productId, m.id))}>
+                <button type="button" className={styles.remove} aria-label={label} aria-disabled={off} onClick={() => act(m.id, label, () => deleteMedia(productId, m.id))}>
                   ✕
                 </button>
                 {at > 0 && (
-                  <button type="button" className={`${styles.move} ${styles.left}`} aria-label="Geser ke kiri" onClick={() => act(m.id, () => moveMedia(productId, m.id, "left"))}>
+                  <button
+                    type="button"
+                    className={`${styles.move} ${styles.left}`}
+                    aria-label="Geser ke kiri"
+                    aria-disabled={off}
+                    onClick={() => act(m.id, "Geser ke kiri", () => moveMedia(productId, m.id, "left"))}
+                  >
                     ←
                   </button>
                 )}
                 {at >= 0 && at < others.length - 1 && (
-                  <button type="button" className={`${styles.move} ${styles.right}`} aria-label="Geser ke kanan" onClick={() => act(m.id, () => moveMedia(productId, m.id, "right"))}>
+                  <button
+                    type="button"
+                    className={`${styles.move} ${styles.right}`}
+                    aria-label="Geser ke kanan"
+                    aria-disabled={off}
+                    onClick={() => act(m.id, "Geser ke kanan", () => moveMedia(productId, m.id, "right"))}
+                  >
                     →
                   </button>
                 )}

@@ -98,6 +98,8 @@ test.describe("desktop list and switch", () => {
     await page.goto("/admin/produk");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Produk");
     await expect(page.getByRole("link", { name: "+ Tambah produk" })).toHaveAttribute("href", "/admin/produk/baru");
+    // The FAB is a narrow-screen layout only (TR-M3-03): on desktop the button stays in the head.
+    expect(await page.getByRole("link", { name: "+ Tambah produk" }).evaluate((el) => getComputedStyle(el.parentElement!).position)).toBe("static");
 
     const chips = page.getByRole("group", { name: "Filter produk" }).getByRole("button");
     await expect(chips).toHaveText([/^Semua \d+$/, /^Ready stock \d+$/, /^Pre-order \d+$/, /^Disembunyikan \d+$/]);
@@ -145,6 +147,97 @@ test.describe("desktop list and switch", () => {
     await expect(control).toHaveAttribute("aria-checked", "false");
     expect((await db.product.findUniqueOrThrow({ where: { id: closed.id } })).isActive).toBe(false);
   });
+
+  test("by keyboard the switch keeps focus after each save; other rows step back while it saves; a newer saved state wins (TR-M3-02, -05)", async ({ page, context }) => {
+    await loginAs(page, "products");
+    await page.goto("/admin/produk");
+    const control = switchOf(page, listed.name);
+    const other = row(page, closed.name);
+
+    // The action's POST is held until the busy state has been seen.
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/admin/produk", async (route) => {
+      if (route.request().headers()["next-action"]) await released;
+      await route.fallback();
+    });
+    await control.focus();
+    await page.keyboard.press("Space");
+    await expect(control).toHaveAttribute("aria-busy", "true");
+    await expect(other).toHaveCSS("opacity", "0.55");
+    await expect(other).toHaveCSS("cursor", "progress");
+    await expect(row(page, listed.name)).toHaveCSS("opacity", "1");
+    release();
+    await expect(control).toHaveAttribute("aria-checked", "true");
+    await expect(control).not.toHaveAttribute("aria-busy");
+    await expect(control).toBeFocused();
+    await expect(other).toHaveCSS("opacity", "1");
+    await page.unroute("**/admin/produk");
+
+    await page.keyboard.press("Space");
+    await expect(control).toHaveAttribute("aria-checked", "false");
+    await expect(control).not.toHaveAttribute("aria-busy");
+    await expect(control).toBeFocused();
+
+    // Shown from a second tab: this tab's next refresh (an action on another row) adopts the saved state.
+    const second = await context.newPage();
+    await second.goto("/admin/produk");
+    await toggle(second, listed.name, true);
+    await expect(control).toHaveAttribute("aria-checked", "false"); // not refreshed yet
+    await toggle(page, closed.name, true);
+    await toggle(page, closed.name, false);
+    await expect(control).toHaveAttribute("aria-checked", "true");
+
+    // Hidden before the test ends (the storefront's cache never keeps an E2E product).
+    await toggle(page, listed.name, false);
+    await second.close();
+  });
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`the off switch reaches 3:1 in ${theme}: ring against the surface, knob against the track (TR-M3-04)`, async ({ page }) => {
+      await page.addInitScript((t) => window.localStorage.setItem("kagumi-theme", t), theme);
+      await loginAs(page, "products");
+      await page.goto("/admin/produk");
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      const control = switchOf(page, closed.name);
+      await expect(control).toHaveAttribute("aria-checked", "false");
+      const { ring, knob } = await control.evaluate((el) => {
+        const rgba = (value: string) => {
+          const [r, g, b, a = 1] = (value.match(/[\d.]+/g) ?? []).map(Number);
+          return { r, g, b, a };
+        };
+        const over = (top: ReturnType<typeof rgba>, base: ReturnType<typeof rgba>) => ({
+          r: top.r * top.a + base.r * (1 - top.a),
+          g: top.g * top.a + base.g * (1 - top.a),
+          b: top.b * top.a + base.b * (1 - top.a),
+          a: 1,
+        });
+        const luminance = ({ r, g, b }: ReturnType<typeof rgba>) => {
+          const lin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+          return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+        };
+        const contrast = (x: ReturnType<typeof rgba>, y: ReturnType<typeof rgba>) => {
+          const [hi, lo] = [luminance(x), luminance(y)].sort((p, q) => q - p);
+          return (hi + 0.05) / (lo + 0.05);
+        };
+        // The first opaque background behind the switch.
+        let node: Element | null = el.parentElement;
+        let surface = rgba("rgba(0, 0, 0, 0)");
+        while (node && surface.a === 0) {
+          surface = rgba(getComputedStyle(node).backgroundColor);
+          node = node.parentElement;
+        }
+        const track = el.querySelector("span")!;
+        const style = getComputedStyle(track);
+        const ringColor = rgba(style.boxShadow.match(/rgba?\([^)]*\)/)?.[0] ?? "rgba(0, 0, 0, 0)");
+        const trackFill = over(rgba(style.backgroundColor), surface);
+        const knobColor = rgba(getComputedStyle(track, "::after").backgroundColor);
+        return { ring: contrast(over(ringColor, surface), surface), knob: contrast(knobColor, trackFill) };
+      });
+      expect(ring).toBeGreaterThanOrEqual(3);
+      expect(knob).toBeGreaterThanOrEqual(3);
+    });
+  }
 
   test("exit criterion 4: show, hide (storefront, checkout), show again; the switch survives a reload (K5)", async ({ page, browser }, info) => {
     await loginAs(page, "products");
@@ -229,6 +322,27 @@ test.describe("360 px cards (K4)", () => {
     expect(reached).toBe(true);
     await expect(card).toHaveCSS("outline-style", "solid");
     await expect(card).toHaveCSS("outline-width", "2px");
+  });
+
+  test('"+ Tambah produk" is a FAB above the bottom nav with cta-glow, and the last card scrolls clear of it (TR-M3-03)', async ({ page }) => {
+    await loginAs(page, "products");
+    await page.goto("/admin/produk");
+    const add = page.getByRole("link", { name: "+ Tambah produk" });
+    await expect(add).toBeVisible();
+    expect(await add.evaluate((el) => getComputedStyle(el.parentElement!).position)).toBe("fixed");
+    await expect(add).toHaveCSS("box-shadow", "rgba(11, 78, 173, 0.6) 0px 16px 32px -12px");
+    await expect(add).toHaveCSS("height", "52px");
+    const nav = await page.getByRole("navigation", { name: "Menu admin" }).boundingBox();
+    const fab = await add.boundingBox();
+    expect(fab && nav && fab.y + fab.height <= nav.y).toBe(true);
+    expect(fab!.x + fab!.width).toBeLessThanOrEqual(page.viewportSize()!.width - 16 + 0.5);
+
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await expect(async () => {
+      const last = await page.locator("main ul li").last().boundingBox();
+      const button = await add.boundingBox();
+      expect(last && button && last.y + last.height <= button.y).toBe(true);
+    }).toPass();
   });
 
   for (const theme of ["light", "dark"] as const) {
@@ -332,7 +446,17 @@ test.describe("product form on desktop (M3.2)", () => {
     await expect(menuCard(after, renamed)).toContainText("Rp45.000");
     await expect(after.getByText(name, { exact: true })).toHaveCount(0);
 
-    // "Batal" goes back to the list.
+    // "Tersimpan." clears as soon as a field changes again (TR-M3-06): typing, then a type pill after a new save.
+    const saved = page.getByRole("status").filter({ hasText: "Tersimpan." });
+    await field(page, /^Harga/).fill("46.000");
+    await expect(saved).toHaveCount(0);
+    await field(page, /^Harga/).fill("45.000");
+    await page.getByRole("button", { name: "Simpan perubahan" }).click();
+    await expect(saved).toBeVisible();
+    await page.getByRole("group", { name: "Tipe produk" }).getByRole("button", { name: "Pre-order" }).click();
+    await expect(saved).toHaveCount(0);
+
+    // "Batal" goes back to the list (the unsaved type change is dropped).
     await page.getByRole("link", { name: "Batal" }).click();
     await expect(page).toHaveURL(/\/admin\/produk$/);
     await expect(row(page, renamed).getByRole("cell").nth(2)).toHaveText("Rp45.000");

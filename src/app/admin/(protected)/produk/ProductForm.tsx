@@ -53,6 +53,8 @@ export default function ProductForm({
   );
   const [type, setType] = useState(product.type);
   const [active, setActive] = useState(product.isActive);
+  // A field changed since the last submit: "Tersimpan." no longer describes the form (TR-M3-06).
+  const [edited, setEdited] = useState(false);
   const form = useRef<HTMLFormElement>(null);
 
   const result = state?.result;
@@ -69,11 +71,19 @@ export default function ProductForm({
     event.preventDefault();
     if (pending) return;
     const data = new FormData(event.currentTarget);
+    setEdited(false);
     startTransition(() => dispatch(data));
   };
 
   return (
-    <form ref={form} className={styles.form} onSubmit={submit} noValidate>
+    <form
+      ref={form}
+      className={styles.form}
+      onSubmit={submit}
+      // A media pick saves itself, so it is no unsaved edit.
+      onChange={(event) => (event.target as Element).getAttribute("type") !== "file" && setEdited(true)}
+      noValidate
+    >
       <section className={detail.panel} aria-labelledby="info">
         <div className={detail.panelHead}>
           <h2 id="info">Informasi produk</h2>
@@ -115,7 +125,16 @@ export default function ProductForm({
           <div className={styles.group}>
             <span className={styles.label}>Tipe</span>
             <input type="hidden" name="type" value={type} />
-            <SegmentedControl admin label="Tipe produk" options={[...TYPES]} value={type} onChange={setType} />
+            <SegmentedControl
+              admin
+              label="Tipe produk"
+              options={[...TYPES]}
+              value={type}
+              onChange={(value) => {
+                setType(value);
+                setEdited(true);
+              }}
+            />
           </div>
           <Field
             admin
@@ -136,7 +155,15 @@ export default function ProductForm({
             <span className={styles.label}>Tampilkan di website</span>
             <input type="hidden" name="isActive" value={String(active)} />
             <span>
-              <Switch checked={active} onChange={setActive} label="Tampil" aria-label="Tampilkan di website" />
+              <Switch
+                checked={active}
+                onChange={(value) => {
+                  setActive(value);
+                  setEdited(true);
+                }}
+                label="Tampil"
+                aria-label="Tampilkan di website"
+              />
             </span>
           </div>
           <Field
@@ -164,7 +191,7 @@ export default function ProductForm({
         )}
         {danger}
         <p className={styles.saved} role="status">
-          {result?.ok && !pending ? "Tersimpan." : ""}
+          {result?.ok && !pending && !edited ? "Tersimpan." : ""}
         </p>
         <Button variant="line" size="nav" href="/admin/produk">
           Batal

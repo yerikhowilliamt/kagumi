@@ -14,6 +14,30 @@
   margin: 0;
 }
 
+.add {
+  display: flex;
+}
+
+/* design.md §4 Breakpoints and Shadow: below 760px "Tambah produk" is a FAB above the bottom nav, with cta-glow
+   (sizes from the approved preview); the list gets room to scroll its last card clear of it. */
+@media (max-width: 760px) {
+  .add {
+    position: fixed;
+    right: 16px;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    z-index: 15;
+  }
+
+  .add > a {
+    height: 52px;
+    box-shadow: var(--shadow-cta);
+  }
+
+  .page {
+    padding-bottom: 48px;
+  }
+}
+
 .table td {
   white-space: nowrap;
 }
@@ -112,6 +136,12 @@
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* design.md §5 Pending (admin): while a switch saves, the other rows step back. */
+.table tbody:has([aria-busy="true"]) tr:not(:has([aria-busy="true"])) {
+  opacity: 0.55;
+  cursor: progress;
 }
 
 .switchCell {

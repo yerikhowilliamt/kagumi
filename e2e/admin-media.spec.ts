@@ -176,18 +176,32 @@ test("main, move and delete (D3, D11); every tile button is reached by Tab with 
   expect(names).toEqual(["Hapus foto", "Hapus video", "Geser ke kanan", "Jadikan utama", "Hapus foto", "Geser ke kiri"]);
   await expect(tiles(page).first().getByRole("button", { name: /Geser/ })).toHaveCount(0); // the main one stays first
 
-  await tiles(page).nth(2).getByRole("button", { name: "Geser ke kiri" }).click();
+  // Each action by keyboard; afterwards focus lands on the same button of the same medium, else its ✕, else the drop
+  // zone (TR-M3-10).
+  const focusedTile = () =>
+    page.evaluate(() => {
+      const el = document.activeElement;
+      const tile = el?.closest("li");
+      return { label: el?.getAttribute("aria-label") ?? null, tile: tile ? [...tile.parentElement!.children].indexOf(tile) : -1 };
+    });
+  await tiles(page).nth(2).getByRole("button", { name: "Geser ke kiri" }).focus();
+  await page.keyboard.press("Enter");
   await expect.poll(async () => (await saved()).map((m) => m.id)).toEqual([photo.id, fake.id, clip.id]);
-  // The grid shows the new order (the action refreshed the page) before the next click.
+  // The grid shows the new order (the action refreshed the page) before the next action.
   await showsAt(page, 1, fake.publicId);
   await showsAt(page, 2, clip.publicId);
+  // "Geser ke kiri" is gone from the fake's tile (now first after the main): its ✕.
+  await expect.poll(focusedTile).toEqual({ label: "Hapus foto", tile: 1 });
 
-  await tiles(page).nth(1).getByRole("button", { name: "Jadikan utama" }).click();
+  await tiles(page).nth(1).getByRole("button", { name: "Jadikan utama" }).focus();
+  await page.keyboard.press("Enter");
   await expect.poll(async () => (await saved()).filter((m) => m.isMain).map((m) => m.id)).toEqual([fake.id]);
   await showsAt(page, 0, fake.publicId);
   await expect(tiles(page).first().getByText("Utama", { exact: true })).toBeVisible();
   await showsAt(page, 1, photo.publicId);
   await expect(tiles(page).nth(1).getByRole("button", { name: "Jadikan utama" })).toBeVisible(); // the photo now
+  // The fake is main now, so it has no "Jadikan utama": its ✕, in the first tile.
+  await expect.poll(focusedTile).toEqual({ label: "Hapus foto", tile: 0 });
 
   // Deleting the main one makes the next image main (the photo), and the queue row is gone (destroy: not found).
   // The action's POST is held until the busy tile has been seen.
@@ -197,8 +211,16 @@ test("main, move and delete (D3, D11); every tile button is reached by Tab with 
     if (route.request().method() === "POST") await released;
     await route.continue();
   });
-  await tiles(page).first().getByRole("button", { name: "Hapus foto" }).click();
+  await page.keyboard.press("Enter"); // focus is on the main one's ✕ (above)
   await expect(tiles(page).first()).toHaveAttribute("aria-busy", "true");
+  // Meanwhile the other tiles step back and their buttons say they can't act (TR-M3-05).
+  await expect(tiles(page).nth(1)).toHaveCSS("opacity", "0.55");
+  const others = await tiles(page).nth(1).getByRole("button").all();
+  expect(others.length).toBeGreaterThan(0);
+  for (const button of others) {
+    await expect(button).toHaveAttribute("aria-disabled", "true");
+    await expect(button).toHaveCSS("cursor", "progress");
+  }
   release();
   // The delete answers after Cloudinary's destroy (D4), seconds on a slow route (IPv6 over the hotspot took 4-7 s).
   await expect(tiles(page)).toHaveCount(2, { timeout: 20_000 });
@@ -210,6 +232,9 @@ test("main, move and delete (D3, D11); every tile button is reached by Tab with 
   ]);
   expect(await db.pendingDeletion.count({ where: { publicId: fake.publicId } })).toBe(0);
   await expect(panel(page).getByRole("alert")).toHaveCount(0);
+  // The medium is gone: the drop zone; and nothing is disabled any more.
+  await expect(dropZone(page)).toBeFocused();
+  await expect(panel(page).locator('[aria-disabled="true"]')).toHaveCount(0);
 });
 
 test("K2: an 11 MB photo, a 31-second video and a GIF are refused in the browser; nothing reaches Cloudinary", async ({ page }) => {

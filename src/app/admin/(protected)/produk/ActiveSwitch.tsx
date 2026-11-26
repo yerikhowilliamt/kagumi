@@ -7,11 +7,17 @@ import { setProductActive } from "./actions";
 import styles from "./page.module.css";
 
 // M3 plan D14 Switch: the "Tampil" column. The switch moves at once; on a failure it returns to the saved state and
-// says so. The page keys it by the saved state, so a render with another saved state (another tab) starts it anew.
+// says so. A render with another saved state (another tab) is adopted once no save is running; the switch is never
+// remounted for it, so it keeps keyboard focus (TR-M3-02).
 export default function ActiveSwitch({ productId, name, active }: { productId: string; name: string; active: boolean }) {
   const [checked, setChecked] = useState(active);
+  const [saved, setSaved] = useState(active);
   const [failed, setFailed] = useState(false);
   const [pending, startTransition] = useTransition();
+  if (active !== saved && !pending) {
+    setSaved(active);
+    setChecked(active);
+  }
 
   const change = (next: boolean) => {
     setChecked(next);

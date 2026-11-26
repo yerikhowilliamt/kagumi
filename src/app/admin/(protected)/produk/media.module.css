@@ -76,6 +76,16 @@
   object-fit: cover;
 }
 
+/* §5 Pending: meanwhile the other media step back, and their buttons say they can't act (TR-M3-05). */
+.grid:has(.tile[aria-busy="true"]) .tile:not([aria-busy="true"], .job) {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.tile button[aria-disabled="true"] {
+  cursor: progress;
+}
+
 /* The whole photo is the "Jadikan utama" button ("Ketuk foto untuk jadikan utama"). */
 .pick {
   position: absolute;

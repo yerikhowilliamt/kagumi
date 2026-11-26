@@ -47,12 +47,15 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
   const edit = (id: string) => `/admin/produk/${id}`;
 
   return (
-    <main>
+    <main className={styles.page}>
       <div className={styles.head}>
         <h1 className={styles.title}>Produk</h1>
-        <Button href="/admin/produk/baru" size="nav">
-          + Tambah produk
-        </Button>
+        {/* At 760px and below a FAB above the bottom nav (design.md §4 Breakpoints, Shadow; TR-M3-03). */}
+        <span className={styles.add}>
+          <Button href="/admin/produk/baru" size="nav">
+            + Tambah produk
+          </Button>
+        </span>
       </div>
 
       <div className={list.toolbar}>
@@ -117,8 +120,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/admin/p
                       )}
                     </td>
                     <td>
-                      {/* Keyed by the saved state: a render after a change elsewhere starts the switch anew. */}
-                      <ActiveSwitch key={String(p.isActive)} productId={p.id} name={p.name} active={p.isActive} />
+                      <ActiveSwitch productId={p.id} name={p.name} active={p.isActive} />
                     </td>
                     <td className={list.num}>
                       <Link className={styles.edit} href={edit(p.id)} aria-label={`Edit ${p.name}`}>

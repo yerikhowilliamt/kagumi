@@ -292,7 +292,7 @@ Track `--bg`/`--surface-2` with 1px `--line`, 4px padding. Options are equal-wid
 
 ### Switch
 
-40×24 track (`--seg-off` off, `--success` on), 18px `--knob` knob, `role="switch"` with `aria-checked`. Label beside or via `aria-label`.
+40×24 track, 18px knob, `role="switch"` with `aria-checked`. Off: `--seg-off` track with a 1.5px `--muted` border and a `--muted` knob (border on the surface 5.41:1 light, 7.22:1 dark; knob on the track 4.62:1 light, 5.56:1 dark: WCAG 1.4.11). On: `--success` track, `--knob` knob. Label beside or via `aria-label`.
 
 ### Quantity stepper
 
