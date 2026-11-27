@@ -16,7 +16,7 @@ export default async function globalSetup() {
   for (const [account, email] of Object.entries(ADMIN_ACCOUNTS) as [AdminAccount, string][]) {
     const password = randomBytes(24).toString("base64url");
     // resetAdmin also clears the lockout and deletes the account's sessions.
-    await db.$transaction((tx) => resetAdmin(tx, { email, password, now }));
+    await db.$transaction((tx) => resetAdmin(tx, { email, password, now }), { maxWait: 10_000 }); // TD-007
     // Workers are forked after the global setup with a copy of this process's environment (C5).
     process.env[passwordVar(account)] = password;
   }

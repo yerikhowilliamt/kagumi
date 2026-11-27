@@ -51,6 +51,13 @@ describe("checkout maps any throw to the server result (D2, D11)", () => {
     expectNoCustomerData(spy);
   });
 
+  it("opens the order transaction with maxWait 10 s (M5.1 K4, TD-007)", async () => {
+    const client = { $transaction: vi.fn().mockRejectedValue(new Error("stop")) };
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await checkout(client as never, CUSTOMER, CTX);
+    expect(client.$transaction.mock.calls[0][1]).toEqual({ maxWait: 10_000 });
+  });
+
   it("a missing TRACKING_SECRET gives server and never opens a transaction", async () => {
     const client = { $transaction: vi.fn() };
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});

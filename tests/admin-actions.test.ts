@@ -263,6 +263,7 @@ describe("e2e global setup (D14, K8)", () => {
     const order: string[] = [];
     const resets: { email: string; password: string }[] = [];
     const deletes: unknown[] = [];
+    const txOptions: unknown[] = [];
     vi.stubEnv("PLAYWRIGHT_BASE_URL", "");
     vi.spyOn(process, "loadEnvFile").mockImplementation(() => void order.push("load"));
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -276,7 +277,7 @@ describe("e2e global setup (D14, K8)", () => {
       order.push("db");
       return {
         db: {
-          $transaction: (run: (tx: unknown) => unknown) => run({ tx: true }),
+          $transaction: (run: (tx: unknown) => unknown, options?: unknown) => (txOptions.push(options), run({ tx: true })),
           // One leftover with a medium, one without (M3.3: the delete path of D4).
           product: { findMany: async (args: unknown) => (order.push("find products"), deletes.push(args), [{ id: "p1" }, { id: "p2" }]) },
         },
@@ -305,7 +306,7 @@ describe("e2e global setup (D14, K8)", () => {
     vi.doUnmock("../src/lib/products.ts");
     vi.doUnmock("../src/lib/cloudinary.ts");
     vi.resetModules();
-    return { outcome, order, resets, deletes, passwords, ADMIN_ACCOUNTS, printed: [...log.mock.calls, ...error.mock.calls] };
+    return { outcome, order, resets, deletes, txOptions, passwords, ADMIN_ACCOUNTS, printed: [...log.mock.calls, ...error.mock.calls] };
   }
 
   it("without it: loads .env, checks the development host before importing db, resets every account, deletes leftover E2E products (M3 D24), prints nothing", async () => {
@@ -327,6 +328,8 @@ describe("e2e global setup (D14, K8)", () => {
     expect(Object.keys(run.ADMIN_ACCOUNTS)).toContain("products");
     expect(run.passwords).toEqual(passwords);
     expect(run.printed).toEqual([]);
+    // M5.1 K4 (TD-007): every transaction, the account resets included, waits up to 10 s for a connection.
+    expect(run.txOptions).toEqual(Array(Object.keys(run.ADMIN_ACCOUNTS).length + 2).fill({ maxWait: 10_000 }));
   });
 
   it("resets nothing and never imports db when the host guard throws", async () => {

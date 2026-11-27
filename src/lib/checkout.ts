@@ -87,7 +87,8 @@ export async function checkout(
 ): Promise<CreateOrderResult> {
   try {
     const visitorHash = hashVisitor(ctx);
-    return await client.$transaction((tx) => placeOrder(tx, input, { visitorHash, now: ctx.now }));
+    // maxWait: a new Neon connection can take longer than Prisma's 2 s default (TD-007).
+    return await client.$transaction((tx) => placeOrder(tx, input, { visitorHash, now: ctx.now }), { maxWait: 10_000 });
   } catch (error) {
     const { name, code } = (error ?? {}) as { name?: unknown; code?: unknown };
     console.error("[createOrder] failed", String(name ?? "Error"), String(code ?? ""));

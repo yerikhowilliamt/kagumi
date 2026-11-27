@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomUUID, scrypt } from "node:crypto";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { assertDevelopmentDatabase } from "../../prisma/seed.ts";
-import { resetAdmin } from "../../scripts/create-admin.ts";
+import { createAdmin, resetAdmin } from "../../scripts/create-admin.ts";
 import { attemptLogin, createSession, deleteSession, findSession } from "@/lib/auth";
 import { hashPassword, verifyPassword } from "@/lib/password";
 
@@ -419,6 +419,86 @@ describe("node scripts/create-admin.ts (TEC-M2.1-04, D13)", { timeout: 120_000 }
     expect(/^create-admin failed: \w+( \w+)?\n$/.test(r.stderr), "one line: name and optional code").toBe(true);
     expect([email, password, url.username, url.hostname].some((v) => r.stderr.includes(v)), "no input or URL part").toBe(false);
     expect(await db.adminUser.count({ where: { email } })).toBe(0);
+  });
+
+  // M5.1 K3 (D9): the rules come before the transaction. A database that doesn't exist on the development host
+  // refuses the connection (the Neon driver ignores a URL port, so a closed port would still connect).
+  it("a broken rule is printed even when the database can't be reached", () => {
+    const url = new URL(process.env.DATABASE_URL!);
+    url.pathname = "/kagumi_missing_db";
+    const r = run({ ADMIN_EMAIL: `fake-${randomUUID()}@two@kagumi.test`, ADMIN_PASSWORD: "fake password 123", DATABASE_URL: url.toString() });
+    expect(r.status === 1, "exit code 1").toBe(true);
+    expect(r.stderr === "ADMIN_EMAIL must contain exactly one @\n", "the rule, not a connection failure").toBe(true);
+  });
+});
+
+describe("CREATE_ADMIN_TARGET=production (M5.1 K1, K2, plan §4.3)", { timeout: 120_000 }, () => {
+  // Only the given variables reach the script: what a run with `node --env-file=.env.prod-admin` passes.
+  // Fake hosts that don't resolve: without the guard the script would go on to connect and print
+  // `create-admin failed: …` instead of the rule.
+  const only = (env: Record<string, string>) =>
+    spawnSync(process.execPath, ["scripts/create-admin.ts"], { env: env as NodeJS.ProcessEnv, encoding: "utf8" });
+  const PROD = "ep-prod-1.example.test";
+  const url = (host: string) => `postgresql://u:p@${host}/neondb?sslmode=require`;
+  const input = { ADMIN_EMAIL: "owner@kagumi.test", ADMIN_PASSWORD: "fake password 123" };
+  const expectRefusal = (r: ReturnType<typeof only>, line: string) => {
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    expect(r.stderr).toBe(`${line}\n`);
+  };
+
+  it("refuses when PROD_DATABASE_HOST is unset", () => {
+    const r = only({ CREATE_ADMIN_TARGET: "production", DATABASE_URL: url("ep-prod-1-pooler.example.test"), ...input });
+    expectRefusal(r, "PROD_DATABASE_HOST must be set in production mode");
+  });
+
+  it("refuses when the DATABASE_URL host (pooled or direct) is not PROD_DATABASE_HOST", () => {
+    for (const host of ["ep-other-1-pooler.example.test", "ep-other-1.example.test"]) {
+      const r = only({ CREATE_ADMIN_TARGET: "production", PROD_DATABASE_HOST: PROD, DATABASE_URL: url(host), ...input });
+      expectRefusal(r, "DATABASE_URL host must equal PROD_DATABASE_HOST");
+    }
+    const r = only({ CREATE_ADMIN_TARGET: "production", PROD_DATABASE_HOST: PROD, ...input });
+    expectRefusal(r, "DATABASE_URL host must equal PROD_DATABASE_HOST");
+  });
+
+  it("refuses when PROD_DATABASE_HOST is DEV_DATABASE_HOST", () => {
+    const env = { CREATE_ADMIN_TARGET: "production", PROD_DATABASE_HOST: PROD, DEV_DATABASE_HOST: PROD, DATABASE_URL: url("ep-prod-1-pooler.example.test") };
+    expectRefusal(only({ ...env, ...input }), "PROD_DATABASE_HOST must not be DEV_DATABASE_HOST");
+  });
+
+  it("refuses any other target, the empty value included", () => {
+    for (const target of ["staging", "Production", ""]) {
+      const r = only({ CREATE_ADMIN_TARGET: target, PROD_DATABASE_HOST: PROD, DATABASE_URL: url("ep-prod-1-pooler.example.test"), ...input });
+      expectRefusal(r, "CREATE_ADMIN_TARGET must be production or unset");
+    }
+  });
+
+  it("does not load .env: DEV_DATABASE_HOST from .env never reaches the guard (K2)", () => {
+    // The development host posing as production, DEV_DATABASE_HOST not passed. Loading .env would set it and
+    // trip the "must not be DEV_DATABASE_HOST" rule; without .env the guard passes and the input rule stops the
+    // run before any connection (and the database doesn't exist).
+    const dev = new URL(process.env.DATABASE_URL!);
+    dev.pathname = "/kagumi_missing_db";
+    const r = only({
+      CREATE_ADMIN_TARGET: "production",
+      PROD_DATABASE_HOST: process.env.DEV_DATABASE_HOST!,
+      DATABASE_URL: dev.toString(),
+      ADMIN_EMAIL: "two@@kagumi.test",
+      ADMIN_PASSWORD: "fake password 123",
+    });
+    // Booleans only, so a failure never prints the connection string.
+    expect(r.status === 1, "exit code 1").toBe(true);
+    expect(r.stderr === "ADMIN_EMAIL must contain exactly one @\n", "the input rule, not the dev-host rule").toBe(true);
+  });
+});
+
+describe("createAdmin (M5.1 K4, D9)", () => {
+  it("runs resetAdmin in one transaction with maxWait 10 s (TD-007)", async () => {
+    const calls: unknown[][] = [];
+    const client = { $transaction: async (...args: unknown[]) => (calls.push(args), "created") };
+    await expect(createAdmin(client as never, { email: "a@kagumi.test", password: "fake password 123", now: NOW })).resolves.toBe("created");
+    expect(calls).toHaveLength(1);
+    expect(calls[0][1]).toEqual({ maxWait: 10_000 });
   });
 });
 
