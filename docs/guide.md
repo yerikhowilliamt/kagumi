@@ -142,7 +142,7 @@ Other commands:
 | `npx playwright test e2e/admin-products.spec.ts --no-deps` | Only the product spec, without its dependency projects (naming a spec alone still runs both of them in full). Writes as `npm run test:e2e` describes |
 | `npx playwright test e2e/admin-media.spec.ts --no-deps` | Only the media spec, the same way. Uploads to Cloudinary and writes as `npm run test:e2e` describes |
 | `node scripts/create-admin.ts` | Creates or resets the development admin account from `ADMIN_EMAIL` and `ADMIN_PASSWORD` (§4) |
-| `PLAYWRIGHT_BASE_URL=https://kagumi-dough.vercel.app npx playwright test e2e/theme.spec.ts` | The theme tests against production, with no local server. Writes nothing while the storefront has no `/api/t` beacons. Once beacons exist, each run records `page_view` events in production |
+| `PLAYWRIGHT_BASE_URL=https://kagumi-dough.vercel.app npx playwright test e2e/theme.spec.ts --project=mobile-360 --project=desktop` | The theme tests against production, with no local server. Name the two projects: without them the product projects pull in their dependency projects in full, and the specs that write throw at load, so no test runs (M3 release). Writes nothing while the storefront has no `/api/t` beacons. Once beacons exist, each run records `page_view` events in production |
 
 ## 4. Database
 
