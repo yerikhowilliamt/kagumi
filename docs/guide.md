@@ -319,6 +319,7 @@ e2e/                 Playwright tests; global-setup.ts resets the e2e admin acco
 public/images/       Brand images
 images/              Original brand images, the source of the copies in src/app/ and public/images/; hampers-natal.jpg is also the photo e2e/admin-media.spec.ts uploads
 docs/                Design documents, ADRs and this guide
+next.config.ts       Security headers for every path (System Design §8; 'unsafe-eval' only in development); agentRules off
 prisma.config.ts     Prisma CLI config: schema, migrations, seed command, DIRECT_URL
 vercel.json          Function region sin1
 ```

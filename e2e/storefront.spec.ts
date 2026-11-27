@@ -14,8 +14,20 @@ const SEED_NAMES = [
   "Kastengel",
 ];
 
+// M5 plan D11: any CSP violation on the home page (theme script, card images, Next.js scripts) fails the test.
+const violations: string[] = [];
+
 test.beforeEach(async ({ page }) => {
+  violations.length = 0;
+  await page.exposeFunction("cspViolation", (v: string) => violations.push(v));
+  await page.addInitScript(() =>
+    document.addEventListener("securitypolicyviolation", (e) => (window as unknown as { cspViolation(v: string): void }).cspViolation(`${e.violatedDirective} ${e.blockedURI}`)),
+  );
   await page.goto("/");
+});
+
+test.afterEach(() => {
+  expect(violations).toEqual([]);
 });
 
 test("notice bar shows the delivery text", async ({ page }) => {

@@ -101,7 +101,18 @@ async function shopper(browser: Browser, page: Page, testId: string) {
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&");
 
+/** M5 plan D11: collects every CSP violation on the page, before its next navigation; the test expects none. */
+async function watchCsp(p: Page) {
+  const violations: string[] = [];
+  await p.exposeFunction("cspViolation", (v: string) => violations.push(v));
+  await p.addInitScript(() =>
+    document.addEventListener("securitypolicyviolation", (e) => (window as unknown as { cspViolation(v: string): void }).cspViolation(`${e.violatedDirective} ${e.blockedURI}`)),
+  );
+  return violations;
+}
+
 test("K1: the photo and the clip upload with a visible percentage; the photo is main; 2 files, also after a reload", async ({ page }) => {
+  const violations = await watchCsp(page); // the upload to api.cloudinary.com and the blob: duration check
   await open(page);
   await expect(panel(page).getByText("0 file")).toBeVisible();
   // The first request to Cloudinary waits until the test has seen its tile's percentage.
@@ -154,6 +165,7 @@ test("K1: the photo and the clip upload with a visible percentage; the photo is 
   ]);
   expect(rows[1].durationSec).toBeCloseTo(2, 0);
   for (const row of rows) expect(row.publicId.startsWith("kagumi/dev/products/"), row.publicId).toBe(true);
+  expect(violations).toEqual([]);
 });
 
 test("main, move and delete (D3, D11); every tile button is reached by Tab with its name (K6)", async ({ page }) => {
@@ -382,6 +394,7 @@ test("M3.5: the list thumb; the storefront card and the detail gallery through C
   expect([photo.kind, clip.kind]).toEqual(["IMAGE", "VIDEO"]);
   const cloud = escape(process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "");
   const imageSrc = (m: typeof photo) => new RegExp(`^https://res\\.cloudinary\\.com/${cloud}/image/upload/f_auto,q_auto,c_fill,w_\\d+/v${m.version}/${escape(m.publicId)}$`);
+  const adminViolations = await watchCsp(page);
   await loginAs(page, "media");
 
   // K6: the list shows the main photo as the thumb, and on desktop the counts (the 360 px cards show no counts).
@@ -393,8 +406,9 @@ test("M3.5: the list thumb; the storefront card and the detail gallery through C
   // Shown through the form: the storefront's next request has the card with the photo (K1, D9).
   await setShown(page, true);
   const shop = await shopper(browser, page, info.testId);
+  const shopViolations = await watchCsp(shop); // card image, gallery photo, poster and video from res.cloudinary.com
   await shop.goto("/");
-  const card = shop.locator("#menu").getByRole("listitem").filter({ has: shop.getByRole("heading", { name: productName, exact: true }) });
+  const card =shop.locator("#menu").getByRole("listitem").filter({ has: shop.getByRole("heading", { name: productName, exact: true }) });
   const open = card.getByRole("button", { name: `Lihat detail ${productName}` });
   await expect(open.locator("img")).toHaveAttribute("src", imageSrc(photo));
   await expect(open.locator("img")).toHaveAttribute("alt", "");
@@ -481,5 +495,6 @@ test("M3.5: the list thumb; the storefront card and the detail gallery through C
   await shop.goto("/");
   await expect(shop.locator("#menu").getByRole("heading").first()).toBeVisible();
   await expect(card).toHaveCount(0);
+  expect({ admin: adminViolations, shop: shopViolations }).toEqual({ admin: [], shop: [] });
   await shop.context().close();
 });
