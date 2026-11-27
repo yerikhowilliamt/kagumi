@@ -1,14 +1,14 @@
 # Developer Guide: Kagumi Dough
 
-**Status:** Current as of M2 Admin: login + orders (closed 2026-11-22)
+**Status:** Current as of M3 Admin: products + media (closed 2026-11-27)
 
-Every command in this guide was run during M0, M1 or M2 or is a script in `package.json`. When the guide and `package.json` differ, `package.json` is right and the guide is corrected. A new command is added here only after it has been run.
+Every command in this guide was run during M0, M1, M2 or M3 or is a script in `package.json`. When the guide and `package.json` differ, `package.json` is right and the guide is corrected. A new command is added here only after it has been run.
 
 ## 1. Project Overview
 
 Kagumi Dough is the website of a homemade bakery in Surakarta (Solo): a storefront with a cart that sends one prefilled WhatsApp order, and an admin dashboard for products and media, orders and statistics.
 
-M0 built the foundation: design tokens and the theme toggle, the full database schema with one migration, and a development seed. M1 builds the storefront on it. So far that is the shared order rules in `src/lib`, a statically rendered home page with the navigation, hero, product-name marquee, how-to-order steps, CTA band and footer, the menu with filter chips and product cards, the product detail dialog, the cart (sheet, toast, mobile cart bar and nav cart button, kept in `localStorage`), and checkout: the `createOrder` Server Action writes the order in one transaction with a per-visitor rate limit, and the cart sheet's form opens the prefilled WhatsApp message in the same tab, also when saving fails. M2 adds the admin: login with scrypt-hashed passwords, sessions and an account lockout, the admin shell with its status bar, and the orders pages, a list with status chips, search and pagination and a detail page that changes the status and keeps its history.
+M0 built the foundation: design tokens and the theme toggle, the full database schema with one migration, and a development seed. M1 builds the storefront on it. So far that is the shared order rules in `src/lib`, a statically rendered home page with the navigation, hero, product-name marquee, how-to-order steps, CTA band and footer, the menu with filter chips and product cards, the product detail dialog, the cart (sheet, toast, mobile cart bar and nav cart button, kept in `localStorage`), and checkout: the `createOrder` Server Action writes the order in one transaction with a per-visitor rate limit, and the cart sheet's form opens the prefilled WhatsApp message in the same tab, also when saving fails. M2 adds the admin: login with scrypt-hashed passwords, sessions and an account lockout, the admin shell with its status bar, and the orders pages, a list with status chips, search and pagination and a detail page that changes the status and keeps its history. M3 adds products and media: the products list with a show/hide switch, the product form, deletion that queues the product's Cloudinary assets before destroying them, and a media panel that uploads photos and videos from the browser straight to Cloudinary with a server signature, so the storefront shows real photos and videos.
 
 **Stack**
 

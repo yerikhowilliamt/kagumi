@@ -19,7 +19,7 @@ External services: **Neon** (Postgres), **Cloudinary** (media storage and delive
 
 | Area | Constraint |
 |---|---|
-| Timeline | Live before 2026-12-01 (~2 weeks), one developer |
+| Timeline | Live before 2026-12-01 (~2 weeks), one developer; statistics (PRD requirements 31–35) follow in December (decided 2026-11-27) |
 | Cost | Free tiers only: Vercel Hobby, Neon Free, Cloudinary Free |
 | Scale | Tens of orders per week, low hundreds of visitors per day at peak (hampers season) |
 | Dependencies | Auth, statistics and Cloudinary signing built in-house with Node built-ins (`crypto`). No auth or analytics libraries |

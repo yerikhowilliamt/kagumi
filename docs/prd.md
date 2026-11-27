@@ -1,7 +1,7 @@
 # PRD: Kagumi Dough Website
 
-**Status:** Accepted (2026-11-15)
-**Target launch:** before 2026-12-01
+**Status:** Accepted (2026-11-15); launch scope revised 2026-11-27 (§3 goal 6, §7)
+**Target launch:** before 2026-12-01 (statistics, requirements 31–35, in December)
 
 ## 1. Overview
 
@@ -19,7 +19,7 @@ Kagumi Dough is a homemade bakery in Surakarta (Solo) selling bolu gulung, brown
 3. Every checkout is saved as an order the owner can see and update in the dashboard.
 4. The owner can create, edit, hide and delete products and upload product photos and videos without developer help.
 5. The owner can see visitor, product-interest and order statistics in the dashboard.
-6. Everything above is live on Vercel before 2026-12-01, in time for the Christmas hampers pre-order season.
+6. Goals 1–4 are live on Vercel before 2026-12-01, in time for the Christmas hampers pre-order season. Goal 5 (statistics) follows in December (decided 2026-11-27).
 
 ## 4. Non-Goals
 
@@ -126,7 +126,7 @@ The MVP is measured simply:
 
 - **Primary:** the number of WhatsApp orders carrying the "(dari website)" marker per week, compared with the owner's total orders.
 - **Secondary (from the dashboard):** visitor → checkout conversion and the most-ordered products.
-- **Launch criterion:** all functional requirements above are live on the production URL before 2026-12-01, and the owner has added the real menu herself through the dashboard.
+- **Launch criterion:** all functional requirements above except 31–35 (statistics) are live on the production URL before 2026-12-01, and the owner has added the real menu herself through the dashboard. Requirements 31–35 follow in December (decided 2026-11-27: products and media finished after their latest date, and the owner needs the days before launch to enter the menu).
 
 ## 8. Assumptions & Open Questions
 
