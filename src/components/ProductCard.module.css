@@ -179,3 +179,59 @@
   color: var(--muted);
   cursor: not-allowed;
 }
+
+/* Fixed slots (design.md §6 Product card): beside another card, every card keeps the same rows, so the name, the
+   description, the deadline and the add button sit at the same height on all of them. A missing description or
+   deadline leaves its row empty. 641px is the menu grid's one-column breakpoint plus one (Menu.module.css); in one
+   column the card flows as above. */
+@media (min-width: 641px) {
+  .item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    /* media, category, meta, description (6px + two lines of 15px/1.55), deadline (8px + 13px/1.5), add */
+    grid-template-rows: auto auto auto calc(6px + 2 * 1.55 * 15px) calc(8px + 1.5 * 13px) auto;
+  }
+
+  .media {
+    grid-row: 1;
+  }
+
+  .category {
+    grid-row: 2;
+  }
+
+  .meta {
+    grid-row: 3;
+  }
+
+  .name {
+    min-width: 0;
+  }
+
+  /* One line. clip on the inline axis only: the ::after hit area above and below stays. */
+  .nameButton {
+    display: block;
+    max-width: 100%;
+    overflow-x: clip;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Two lines at most; the detail shows the whole text. */
+  .desc {
+    grid-row: 4;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+
+  .deadline {
+    grid-row: 5;
+  }
+
+  .add {
+    grid-row: 6;
+    justify-self: start;
+  }
+}

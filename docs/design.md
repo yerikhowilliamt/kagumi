@@ -342,6 +342,7 @@ Not boxed: the thumbnail carries the color, and the text sits on the page backgr
 - **Category** 13px `--muted`, on its own line above the name.
 - **Meta:** name (clickable → detail) left, price right. No price → "Harga via WA" in `--muted`.
 - **Description** 15px `--muted`. **Deadline** (optional) 13px/500 `--warning`.
+- **Fixed slots** (641px and up, where cards sit side by side): every card keeps the same rows, so the name, the description, the deadline and the add button sit at the same height on all cards. The name stays on one line and the description on two at most, both ending in an ellipsis when longer (the product detail shows them whole); a card without a description or a deadline leaves that row empty. In one column the card flows without reserved rows.
 - **Add button:** Line-style pill 40px, "+ Tambah ke keranjang". When the product is in the cart it switches to `--strong` / `--on-strong`, "✓ Di keranjang (n)", and clicking adds one more.
 - **Closed** (deadline passed): thumbnail at 50% opacity, add button dashed and muted with "Order sudah ditutup", not clickable. Closed cards sort last.
 
